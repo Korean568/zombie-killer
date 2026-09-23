@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 15; // 로드된 번들 확인용
+window.GAME_BUILD = 17; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -113,6 +113,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   let pointerLocked = false;
   let mouseSwayX = 0;
   let mouseSwayY = 0;
+  let tapFireRelease = false;
 
   /*
     조준 방식. 기본은 포인터 잠금이지만 iframe 등 잠금이 막힌 환경에서는
@@ -1019,6 +1020,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     state = 'shop';
     el.shop.classList.add('show');
     hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
     shopMessage('');
     renderShop();
     // 버튼을 클릭해야 하므로 포인터 잠금을 푼다.
@@ -1031,6 +1033,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     shopOpen = false;
     el.shop.classList.remove('show');
     hudEl.classList.add('on');
+    TOUCH.setVisible(true);
     state = 'playing';
     requestLock();
   }
@@ -1298,6 +1301,19 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function updatePlayer(dt) {
+    // 터치 조준: 오른쪽 화면을 드래그한 만큼 시점을 돌린다
+    if (TOUCH.enabled) {
+      const l = TOUCH.consumeLook();
+      if (l.dx || l.dy) {
+        const ts = 0.0032 * settings.sensitivity;
+        player.yaw -= l.dx * ts;
+        player.pitch -= l.dy * ts;
+        player.pitch = clamp(player.pitch, -Math.PI / 2 + 0.05, Math.PI / 2 - 0.05);
+        mouseSwayX = clamp(mouseSwayX + l.dx * 0.004, -1.2, 1.2);
+        mouseSwayY = clamp(mouseSwayY + l.dy * 0.004, -1.2, 1.2);
+      }
+    }
+
     // 커서 조준 모드: 화면 중앙에서 벗어난 만큼 계속 선회한다
     if (aimMode === 'cursor' && cursorAim.active) {
       const DEAD = 0.14;
@@ -1319,9 +1335,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     player.recoilPitch = dampen(player.recoilPitch, 0, 9, dt);
     player.recoilYaw = dampen(player.recoilYaw, 0, 9, dt);
 
-    // 이동 입력
-    const fwd = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
-    const side = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+    // 이동 입력 (키보드 + 가상 조이스틱)
+    let fwd = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
+    let side = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+    if (TOUCH.enabled && TOUCH.move.active) {
+      fwd = -TOUCH.move.y; // 위로 밀면 전진
+      side = TOUCH.move.x;
+    }
 
     const sinY = Math.sin(player.yaw);
     const cosY = Math.cos(player.yaw);
@@ -1334,14 +1354,18 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
 
     // 앉기
-    const wantCrouch = !!(keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC']);
+    const wantCrouch =
+      !!(keys['ControlLeft'] || keys['ControlRight'] || keys['KeyC']) ||
+      (TOUCH.enabled && TOUCH.buttons.crouch);
     player.crouching = wantCrouch && player.onGround;
     const targetH = player.crouching ? 1.05 : player.height;
     player.curHeight = dampen(player.curHeight, targetH, 12, dt);
 
     // 질주 / 스태미나
     const moving = wl > 0.01;
-    const wantSprint = !!keys['ShiftLeft'] && moving && fwd > 0 && !player.crouching;
+    const wantSprint =
+      (!!keys['ShiftLeft'] || (TOUCH.enabled && TOUCH.buttons.sprint)) &&
+      moving && fwd > 0 && !player.crouching;
     const sprinting = wantSprint && player.stamina > 1;
     if (sprinting) {
       player.stamina = Math.max(0, player.stamina - 32 * dt);
@@ -1366,7 +1390,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
 
     // 점프 / 중력
-    if (keys['Space'] && player.onGround) {
+    if ((keys['Space'] || (TOUCH.enabled && TOUCH.buttons.jump)) && player.onGround) {
       player.vel.y = 6.2;
       player.onGround = false;
     }
@@ -1596,6 +1620,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     resetGame();
     state = 'playing';
     hudEl.classList.add('on');
+    TOUCH.setVisible(true);
     hideScreens();
     SFX.init();
     SFX.resume();
@@ -1648,6 +1673,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SFX.stopAmbient();
     document.exitPointerLock && document.exitPointerLock();
     hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
     $('#g-wave').textContent = wave;
     $('#g-kills').textContent = stats.kills;
     $('#g-head').textContent = stats.headshots;
@@ -1663,6 +1689,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (state !== 'playing') return;
     state = 'paused';
     hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
     $('#p-wave').textContent = wave;
     $('#p-kills').textContent = stats.kills;
     $('#p-time').textContent = fmtTime(stats.time);
@@ -1673,6 +1700,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (state !== 'paused') return;
     hideScreens();
     hudEl.classList.add('on');
+    TOUCH.setVisible(true);
     state = 'playing';
     SFX.resume();
     requestLock();
@@ -1681,6 +1709,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function toMenu() {
     shopOpen = false;
     el.shop.classList.remove('show');
+    TOUCH.setVisible(false);
     state = 'menu';
     SFX.stopAmbient();
     hudEl.classList.remove('on');
@@ -1695,7 +1724,18 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     Object.keys(screens).forEach((k) => screens[k].classList.remove('show'));
   }
 
+  function toggleFlashlight() {
+    player.flashlightOn = !player.flashlightOn;
+    flashlight.intensity = player.flashlightOn ? 2.9 : 0;
+    toast(player.flashlightOn ? '손전등 켜짐' : '손전등 꺼짐');
+  }
+
   function requestLock() {
+    // 터치 기기는 포인터 잠금 자체가 없다. 드래그로 조준한다.
+    if (TOUCH.enabled) {
+      aimMode = 'touch';
+      return;
+    }
     if (aimMode === 'cursor') return;
     if (!canvas.requestPointerLock) {
       enableCursorAim();
@@ -1751,11 +1791,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         return;
       }
       if (e.code === 'KeyR') startReload();
-      if (e.code === 'KeyF') {
-        player.flashlightOn = !player.flashlightOn;
-        flashlight.intensity = player.flashlightOn ? 2.9 : 0;
-        toast(player.flashlightOn ? '손전등 켜짐' : '손전등 꺼짐');
-      }
+      if (e.code === 'KeyF') toggleFlashlight();
       if (e.code === 'Digit1') equip(0);
       if (e.code === 'Digit2') equip(1);
       if (e.code === 'Digit3') equip(2);
@@ -1908,6 +1944,26 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
       // 입력 -> 사격
       if (fireCooldown > 0) fireCooldown -= dt;
+
+      if (TOUCH.enabled) {
+        // 발사 버튼을 누르고 있으면 계속, 화면을 짧게 탭하면 한 발
+        const held = TOUCH.buttons.fire;
+        if (held && !mouseDown) mouseHeldSince = 0;
+        mouseDown = held;
+        if (TOUCH.consume('tapFire') && !held) {
+          mouseDown = true;
+          mouseHeldSince = 0;
+          tapFireRelease = true;
+        }
+        if (TOUCH.consume('reload')) startReload();
+        if (TOUCH.consume('weapon1')) equip(0);
+        if (TOUCH.consume('weapon2')) equip(1);
+        if (TOUCH.consume('weapon3')) equip(2);
+        if (TOUCH.consume('shop')) openShop();
+        if (TOUCH.consume('flashlight')) toggleFlashlight();
+        if (TOUCH.consume('pause')) pauseGame();
+      }
+
       if (mouseDown) {
         const def = weapons[curWeapon].def;
         if (def.auto || mouseHeldSince === 0) tryFire(dt);
@@ -1969,6 +2025,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       updatePickups(dt);
       updateParticles(dt);
       SCHOOL.update(dt, player.pos, time);
+      if (tapFireRelease) {
+        mouseDown = false;
+        tapFireRelease = false;
+      }
+
       updateCrosshair();
       updateHud();
       updateSquadHud();
@@ -2053,6 +2114,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     flowField = computeFlowField(player.pos.x, player.pos.z);
 
     bindInput();
+    // 나중에 터치로 켜지면 플레이 중일 때 바로 UI를 띄운다
+    TOUCH.init(function () {
+      TOUCH.setVisible(state === 'playing');
+    });
+    TOUCH.setVisible(false);
     clock = new THREE.Clock();
 
     // 디버그 핸들 (개발 중 장면 점검용)
