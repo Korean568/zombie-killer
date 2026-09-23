@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 12; // 로드된 번들 확인용
+window.GAME_BUILD = 15; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -39,6 +39,13 @@ window.GAME_BUILD = 12; // 로드된 번들 확인용
     ch: {
       t: $('#ch-t'), b: $('#ch-b'), l: $('#ch-l'), r: $('#ch-r'),
     },
+    points: $('#points').querySelector('b'),
+    squad: $('#squad'),
+    shop: $('#shop'),
+    shopPoints: $('#shop-points'),
+    shopSummon: $('#shop-summon'),
+    shopUpgrade: $('#shop-upgrade'),
+    shopMsg: $('#shop-msg'),
   };
 
   /* ---------------- 설정 ---------------- */
@@ -145,6 +152,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   /* ---------------- 아이템 ---------------- */
   let pickups = [];
+
+  /* ---------------- 부하 ---------------- */
+  let allies = [];
+  let killPoints = 0;
+  let shopOpen = false;
 
   /* ---------------- 통계 ---------------- */
   const stats = { kills: 0, headshots: 0, shots: 0, hits: 0, time: 0 };
@@ -872,6 +884,244 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     pickups = [];
   }
 
+
+  /* =========================================================
+     부하 (아군 병사)
+     ========================================================= */
+
+  /* 총알 궤적 - 짧게 번쩍이는 선 */
+  const tracers = { pool: [], cursor: 0, max: 14 };
+  function initTracers() {
+    const geo = new THREE.BoxGeometry(0.03, 0.03, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffe2a0,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    for (let i = 0; i < tracers.max; i++) {
+      const m = new THREE.Mesh(geo, mat);
+      m.visible = false;
+      m.life = 0;
+      scene.add(m);
+      tracers.pool.push(m);
+    }
+  }
+
+  function spawnTracer(from, to) {
+    const len = from.distanceTo(to);
+    if (len < 0.1) return;
+    const m = tracers.pool[tracers.cursor];
+    tracers.cursor = (tracers.cursor + 1) % tracers.max;
+    m.visible = true;
+    m.life = 0.055;
+    m.position.copy(from).lerp(to, 0.5);
+    m.lookAt(to);
+    m.scale.set(1, 1, len);
+  }
+
+  function updateTracers(dt) {
+    for (let i = 0; i < tracers.pool.length; i++) {
+      const m = tracers.pool[i];
+      if (!m.visible) continue;
+      m.life -= dt;
+      if (m.life <= 0) m.visible = false;
+    }
+  }
+
+  function allySpawnSpot() {
+    // 플레이어 주변에서 설 수 있는 자리를 찾는다
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = rand(1.4, 3.2);
+      const x = player.pos.x + Math.cos(a) * d;
+      const z = player.pos.z + Math.sin(a) * d;
+      if (SCHOOL.isSpotFree(x, z, 0.5)) return { x: x, z: z };
+    }
+    return { x: player.pos.x, z: player.pos.z };
+  }
+
+  function summonAlly() {
+    if (allies.length >= ALLY_MAX) {
+      shopMessage('부하는 최대 ' + ALLY_MAX + '명까지입니다');
+      return false;
+    }
+    if (killPoints < ALLY_SUMMON_COST) {
+      shopMessage('킬 포인트가 부족합니다');
+      return false;
+    }
+    killPoints -= ALLY_SUMMON_COST;
+    const a = new Ally(allySpawnSpot(), 0);
+    a.addTo(scene);
+    allies.push(a);
+    SFX.pickup('ammo');
+    toast(ALLY_RANKS[0].name + ' 합류');
+    return true;
+  }
+
+  function upgradeAlly(index) {
+    const a = allies[index];
+    if (!a || a.dead) return false;
+    if (a.rank >= ALLY_RANKS.length - 1) {
+      shopMessage('이미 최고 계급입니다');
+      return false;
+    }
+    const cost = ALLY_UPGRADE_COST[a.rank + 1];
+    if (killPoints < cost) {
+      shopMessage('킬 포인트가 부족합니다');
+      return false;
+    }
+    killPoints -= cost;
+    a.promote(scene);
+    SFX.waveClear();
+    toast(a.spec.name + ' 승급');
+    return true;
+  }
+
+  function clearAllies() {
+    allies.forEach(function (a) { a.removeFrom(scene); });
+    allies = [];
+  }
+
+  function updateAllies(dt) {
+    const ctx = {
+      playerPos: player.pos,
+      flow: flowField,
+      zombies: zombies,
+      allies: allies,
+      tracer: spawnTracer,
+      onAllyHit: function (z, point, killed, head) {
+        bloodBurst(point, { x: 0, y: 1, z: 0 }, head ? 10 : 6);
+        SFX.flesh(0.5);
+        if (killed) onZombieKilled(z, head, point);
+      },
+    };
+    for (let i = allies.length - 1; i >= 0; i--) {
+      const a = allies[i];
+      a.update(dt, ctx);
+      if (a.removeMe) {
+        a.removeFrom(scene);
+        allies.splice(i, 1);
+        toast(a.spec.name + ' 전사', true);
+        if (shopOpen) renderShop();
+      }
+    }
+  }
+
+  /* =========================================================
+     상점
+     ========================================================= */
+  function openShop() {
+    if (state !== 'playing') return;
+    shopOpen = true;
+    state = 'shop';
+    el.shop.classList.add('show');
+    hudEl.classList.remove('on');
+    shopMessage('');
+    renderShop();
+    // 버튼을 클릭해야 하므로 포인터 잠금을 푼다.
+    // state 를 먼저 'shop' 으로 바꿔 두어 일시정지로 빠지지 않는다.
+    if (document.exitPointerLock) document.exitPointerLock();
+  }
+
+  function closeShop() {
+    if (!shopOpen) return;
+    shopOpen = false;
+    el.shop.classList.remove('show');
+    hudEl.classList.add('on');
+    state = 'playing';
+    requestLock();
+  }
+
+  function shopMessage(text) {
+    el.shopMsg.textContent = text;
+  }
+
+  function statLine(spec) {
+    return (
+      '<div>체력 <b>' + spec.hp + '</b></div>' +
+      '<div>피해 <b>' + spec.dmg + '</b></div>' +
+      '<div>연사 <b>' + spec.cooldown.toFixed(2) + '초</b></div>' +
+      '<div>사거리 <b>' + spec.range + 'm</b></div>' +
+      '<div>명중률 <b>' + Math.round(spec.accuracy * 100) + '%</b></div>'
+    );
+  }
+
+  function renderShop() {
+    el.shopPoints.textContent = killPoints;
+
+    /* --- 소환 --- */
+    const canSummon = allies.length < ALLY_MAX && killPoints >= ALLY_SUMMON_COST;
+    const s0 = ALLY_RANKS[0];
+    el.shopSummon.innerHTML =
+      '<button class="unit" id="btn-summon"' + (canSummon ? '' : ' disabled') + '>' +
+      '<div class="u-top"><span class="u-name">' + s0.name + ' 소환</span>' +
+      '<span class="u-cost">' + ALLY_SUMMON_COST + ' KP</span></div>' +
+      '<div class="u-stats">' + statLine(s0) + '</div>' +
+      '<div class="u-note">현재 ' + allies.length + ' / ' + ALLY_MAX + '명' +
+      (allies.length >= ALLY_MAX ? ' — 자리가 없습니다' : '') + '</div>' +
+      '</button>';
+    const bs = document.getElementById('btn-summon');
+    if (bs) {
+      bs.addEventListener('click', function () {
+        if (summonAlly()) renderShop();
+      });
+    }
+
+    /* --- 승급 --- */
+    if (!allies.length) {
+      el.shopUpgrade.innerHTML =
+        '<div class="u-note" style="color:#6f7368">먼저 부하를 소환하세요.</div>';
+      return;
+    }
+    el.shopUpgrade.innerHTML = allies
+      .map(function (a, i) {
+        const maxed = a.rank >= ALLY_RANKS.length - 1;
+        const next = maxed ? null : ALLY_RANKS[a.rank + 1];
+        const cost = maxed ? 0 : ALLY_UPGRADE_COST[a.rank + 1];
+        const can = !maxed && killPoints >= cost;
+        const chain = ALLY_RANKS.map(function (r, ri) {
+          const cls = ri <= a.rank ? ' on' : ri === a.rank + 1 ? ' next' : '';
+          return '<span class="rank-chip' + cls + '">' + r.name + '</span>';
+        }).join('');
+        return (
+          '<button class="unit" data-ally="' + i + '"' + (can ? '' : ' disabled') + '>' +
+          '<div class="u-top"><span class="u-name">' + (i + 1) + '번 ' + a.spec.name + '</span>' +
+          '<span class="u-cost' + (maxed ? ' free' : '') + '">' +
+          (maxed ? 'MAX' : cost + ' KP') + '</span></div>' +
+          '<div class="u-stats">' + statLine(next || a.spec) + '</div>' +
+          '<div class="rank-chain">' + chain + '</div>' +
+          '<div class="u-note">체력 ' + Math.ceil(a.hp) + ' / ' + a.maxHp + '</div>' +
+          '</button>'
+        );
+      })
+      .join('');
+    el.shopUpgrade.querySelectorAll('[data-ally]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (upgradeAlly(parseInt(b.dataset.ally, 10))) renderShop();
+      });
+    });
+  }
+
+  function updateSquadHud() {
+    setText(el.points, 'kp', String(killPoints));
+    const key = allies.map(function (a) { return a.rank + ':' + Math.ceil(a.hp); }).join('|');
+    if (hudCache.squad === key) return;
+    hudCache.squad = key;
+    el.squad.innerHTML = allies
+      .map(function (a) {
+        return (
+          '<div class="squad-row"><i>' + a.spec.short + '</i>' +
+          '<div class="squad-hp"><span style="transform:scaleX(' +
+          clamp(a.hp / a.maxHp, 0, 1).toFixed(2) + ')"></span></div>' +
+          '<span>' + a.spec.name + '</span></div>'
+        );
+      })
+      .join('');
+  }
+
   /* =========================================================
      웨이브
      ========================================================= */
@@ -988,9 +1238,15 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     for (let i = MAX_CORPSES; i < corpses.length; i++) corpses[i].sinkAfter = 0;
   }
 
+  /* 좀비 종류별 킬 포인트 */
+  const KILL_VALUE = { walker: 1, runner: 2, brute: 5 };
+
   function onZombieKilled(z, head, point) {
     stats.kills++;
     limitCorpses();
+    const gain = (KILL_VALUE[z.typeKey] || 1) + (head ? 1 : 0);
+    killPoints += gain;
+    if (shopOpen) renderShop();
     SFX.zombieDeath(z.pos.distanceTo(player.pos));
     bloodBurst(point, { x: 0, y: 1, z: 0 }, 14);
     if (Math.random() < 0.075 && SCHOOL.isSpotFree(z.pos.x, z.pos.z, 0.5)) {
@@ -1359,6 +1615,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     decals.pool.forEach((d) => (d.visible = false));
     clearParticles();
 
+    clearAllies();
+    killPoints = 0;
+    shopOpen = false;
+    el.shop.classList.remove('show');
+    tracers.pool.forEach(function (m) { m.visible = false; });
+
     wave = 0;
     waveState = 'prep';
     spawnQueue = [];
@@ -1379,6 +1641,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function die() {
+    shopOpen = false;
+    el.shop.classList.remove('show');
     state = 'dead';
     SFX.gameOver();
     SFX.stopAmbient();
@@ -1415,6 +1679,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function toMenu() {
+    shopOpen = false;
+    el.shop.classList.remove('show');
     state = 'menu';
     SFX.stopAmbient();
     hudEl.classList.remove('on');
@@ -1464,14 +1730,26 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function bindInput() {
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
+        if (shopOpen) {
+          closeShop();
+          return;
+        }
         // 잠금 모드에서는 브라우저가 해제를 처리하지만, 커서 조준에서는 직접 멈춘다
         if (aimMode === 'cursor' && state === 'playing') pauseGame();
+        return;
+      }
+      if (e.code === 'KeyB' && shopOpen) {
+        closeShop();
         return;
       }
       keys[e.code] = true;
 
       if (state !== 'playing') return;
 
+      if (e.code === 'KeyB') {
+        openShop();
+        return;
+      }
       if (e.code === 'KeyR') startReload();
       if (e.code === 'KeyF') {
         player.flashlightOn = !player.flashlightOn;
@@ -1590,6 +1868,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       SFX.setVolume(settings.volume);
     });
 
+    $('#shop-close').addEventListener('click', closeShop);
     $('#btn-start').addEventListener('click', startGame);
     $('#btn-resume').addEventListener('click', resumeGame);
     $('#btn-quit').addEventListener('click', toMenu);
@@ -1618,7 +1897,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const time = clock.getElapsedTime();
+    step(dt, time);
+    render();
+  }
 
+  /* 시뮬레이션 한 스텝. 테스트에서 프레임과 무관하게 돌릴 수 있도록 분리했다 */
+  function step(dt, time) {
     if (state === 'playing') {
       stats.time += dt;
 
@@ -1654,6 +1938,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         flow: flowField,
         neighbors: () => zombies,
         damagePlayer,
+        allies: allies,
+        damageAlly: function (ally, amount) {
+          if (ally.hurt(amount)) {
+            // 전사 처리는 updateAllies 에서 정리한다
+          }
+          addShake(0.12, 0.12);
+        },
       };
       for (let i = zombies.length - 1; i >= 0; i--) {
         const z = zombies[i];
@@ -1673,11 +1964,14 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         if (!spawnQueue.length && !zombies.some((z) => !z.dead)) endWave();
       }
 
+      updateAllies(dt);
+      updateTracers(dt);
       updatePickups(dt);
       updateParticles(dt);
       SCHOOL.update(dt, player.pos, time);
       updateCrosshair();
       updateHud();
+      updateSquadHud();
 
       // 히트마커 / 안내문 타이머
       if (hitmarkerTimer > 0) {
@@ -1688,6 +1982,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         announceTimer -= dt;
         if (announceTimer <= 0) el.announce.style.opacity = '0';
       }
+    } else if (state === 'shop') {
+      // 상점 중에는 전투가 멈춘다. 화면만 갱신.
+      updateTracers(dt);
+      updateParticles(dt);
+      SCHOOL.update(dt, player.pos, time);
     } else if (state === 'menu') {
       // 메뉴 배경: 복도를 천천히 둘러보는 카메라
       menuAngle += dt * 0.08;
@@ -1707,10 +2006,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       SCHOOL.update(dt, camera.position, time);
     }
 
+  }
+
+  function render() {
     renderer.render(scene, camera);
 
     // 뷰모델을 월드 위에 겹쳐 그린다 (깊이만 초기화해서 벽을 뚫지 않게)
-    if (state !== 'menu' && viewRoot.visible) {
+    if (state !== 'menu' && state !== 'shop' && viewRoot.visible) {
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(viewScene, viewCamera);
@@ -1741,6 +2043,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     initParticles();
     initDecals();
     initMuzzle();
+    initTracers();
 
     SCHOOL.build(scene, 'medium');
     built = true;
@@ -1757,6 +2060,19 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       scene, camera, viewRoot,
       get viewModel() { return viewModel; },
       get player() { return player; },
+      get allies() { return allies; },
+      get zombies() { return zombies; },
+      get killPoints() { return killPoints; },
+      // 브라우저가 rAF 를 멈춰도 시뮬레이션을 돌려 볼 수 있게
+      step: function (dt, count) {
+        const n = count || 1;
+        for (let i = 0; i < n; i++) step(dt || 0.016, clock.getElapsedTime());
+        render();
+      },
+      set killPoints(v) {
+        killPoints = v;
+        if (shopOpen) renderShop();
+      },
     };
 
     $('#loading').style.display = 'none';

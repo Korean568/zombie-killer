@@ -129,6 +129,38 @@ const SFX = (function () {
     tail.stop(t + 0.65);
   }
 
+  /* ---------- 부하 총성 (플레이어 총보다 작고 건조하게) ---------- */
+  function allyShot(dist) {
+    if (!ctx) return;
+    const att = clamp(1 - dist / 40, 0.08, 1) * 0.42;
+    const t = now();
+
+    const n = noiseSource();
+    const g = ctx.createGain();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(2400, t);
+    f.frequency.exponentialRampToValueAtTime(600, t + 0.11);
+    f.Q.value = 1.1;
+    env(g, t, 0.5 * att, 0.002, 0.11);
+    n.connect(f);
+    f.connect(g);
+    g.connect(master);
+    n.start(t);
+    n.stop(t + 0.16);
+
+    const o = ctx.createOscillator();
+    const og = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(190, t);
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.1);
+    env(og, t, 0.35 * att, 0.003, 0.1);
+    o.connect(og);
+    og.connect(master);
+    o.start(t);
+    o.stop(t + 0.15);
+  }
+
   /* ---------- 빈 탄창 딸깍 ---------- */
   function dryFire() {
     if (!ctx) return;
@@ -491,6 +523,7 @@ const SFX = (function () {
     setVolume,
     setMuted,
     shot,
+    allyShot,
     dryFire,
     reload,
     flesh,

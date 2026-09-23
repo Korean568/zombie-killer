@@ -135,6 +135,64 @@
   #compass{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
     font-size:11px;letter-spacing:.3em;color:rgba(200,196,182,.45);}
 
+  /* 킬 포인트 / 부하 현황 */
+  #points{margin-top:10px;display:flex;align-items:baseline;gap:7px;}
+  #points b{font-size:22px;font-weight:800;color:#e4c14a;line-height:1;}
+  #points span{font-size:11px;letter-spacing:.2em;color:var(--muted);}
+  #squad{margin-top:6px;display:flex;flex-direction:column;gap:3px;}
+  .squad-row{display:flex;align-items:center;gap:7px;font-size:11px;color:#b9b5a6;}
+  .squad-row i{font-style:normal;width:34px;letter-spacing:.06em;color:#e0dcc9;}
+  .squad-hp{width:54px;height:4px;background:rgba(255,255,255,.1);position:relative;overflow:hidden;}
+  .squad-hp span{position:absolute;inset:0;background:linear-gradient(90deg,#4d7a33,#9fb84a);
+    transform-origin:left;}
+  #shop-hint{margin-top:8px;font-size:11px;letter-spacing:.14em;color:rgba(228,193,74,.75);}
+
+  /* ============ 상점 ============ */
+  #shop{
+    position:fixed;inset:0;z-index:28;display:none;
+    align-items:center;justify-content:center;padding:24px;
+    background:radial-gradient(ellipse at center,rgba(14,16,20,.78) 0%,rgba(4,5,7,.93) 75%);
+    backdrop-filter:blur(4px);
+  }
+  #shop.show{display:flex;}
+  .shop-box{width:100%;max-width:860px;background:rgba(12,14,17,.9);
+    border:1px solid rgba(255,255,255,.12);padding:26px 28px;}
+  .shop-head{display:flex;align-items:baseline;justify-content:space-between;
+    flex-wrap:wrap;gap:10px;border-bottom:1px solid rgba(255,255,255,.12);
+    padding-bottom:14px;margin-bottom:18px;}
+  .shop-head h2{font-size:26px;font-weight:800;letter-spacing:.04em;}
+  .shop-head h2 em{font-style:normal;color:var(--red);}
+  .shop-bank{font-size:13px;color:var(--muted);letter-spacing:.14em;}
+  .shop-bank b{font-size:26px;color:#e4c14a;font-weight:800;margin-left:8px;letter-spacing:0;}
+
+  .shop-section{font-size:11px;letter-spacing:.3em;color:var(--muted);margin:0 0 10px;}
+  .shop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+  .unit{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.025);
+    padding:13px 14px;text-align:left;cursor:pointer;color:#b9b5a6;
+    transition:border-color .14s,background .14s,transform .12s;pointer-events:auto;}
+  .unit:hover:not(:disabled){border-color:rgba(228,193,74,.6);background:rgba(228,193,74,.07);
+    transform:translateY(-2px);}
+  .unit:disabled{opacity:.34;cursor:not-allowed;}
+  .unit .u-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+  .unit .u-name{font-size:15px;font-weight:700;color:#ece8d8;}
+  .unit .u-cost{font-size:13px;font-weight:800;color:#e4c14a;}
+  .unit .u-cost.free{color:var(--accent);}
+  .unit .u-stats{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;
+    font-size:11px;color:#8f8b7d;}
+  .unit .u-stats b{color:#c6c2b2;font-weight:600;}
+  .unit .u-note{margin-top:7px;font-size:11px;color:#7d8172;line-height:1.5;}
+
+  .rank-chain{display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap;}
+  .rank-chip{font-size:10px;letter-spacing:.06em;padding:2px 7px;border:1px solid rgba(255,255,255,.16);
+    color:#7d8172;}
+  .rank-chip.on{color:#0d0f0c;background:#d9c273;border-color:#d9c273;font-weight:700;}
+  .rank-chip.next{border-color:rgba(228,193,74,.6);color:#e4c14a;}
+
+  .shop-foot{margin-top:20px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1);
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .shop-foot .tip{font-size:11.5px;color:#6f7368;letter-spacing:.06em;line-height:1.6;}
+  #shop-msg{font-size:12px;color:var(--red);min-height:16px;letter-spacing:.06em;}
+
   /* ============ 화면들 ============ */
   .screen{
     position:fixed;inset:0;z-index:30;display:none;
@@ -239,6 +297,9 @@
     <div class="wave-num"><em id="wave">1</em></div>
     <div id="remaining">남은 좀비 <b>0</b></div>
     <div id="killcount">처치 0 · 생존 0:00</div>
+    <div id="points"><b>0</b><span>킬 포인트</span></div>
+    <div id="squad"></div>
+    <div id="shop-hint">B — 부하 상점</div>
   </div>
 
   <div id="announce"><div class="big"></div><div class="sub"></div></div>
@@ -260,7 +321,34 @@
     <div id="slots"></div>
   </div>
 
-  <div id="compass">F 손전등 · R 재장전 · 1 2 3 무기</div>
+  <div id="compass">F 손전등 · R 재장전 · 1 2 3 무기 · B 상점</div>
+</div>
+
+<!-- ================= 상점 ================= -->
+<div id="shop">
+  <div class="shop-box">
+    <div class="shop-head">
+      <h2>부하 <em>상점</em></h2>
+      <div class="shop-bank">보유 킬 포인트 <b id="shop-points">0</b></div>
+    </div>
+
+    <p class="shop-section">부하 소환</p>
+    <div class="shop-grid" id="shop-summon"></div>
+
+    <p class="shop-section" style="margin-top:22px">계급 승급</p>
+    <div class="shop-grid" id="shop-upgrade"></div>
+
+    <div class="shop-foot">
+      <div class="tip">
+        좀비를 처치하면 킬 포인트가 쌓입니다. 일반 1 · 달리는 좀비 2 · 거대 좀비 5 (헤드샷 +1)<br>
+        부하는 최대 4명이며, 좀비가 가까이 오면 대신 맞아 줍니다.
+      </div>
+      <div style="text-align:right">
+        <div id="shop-msg"></div>
+        <button class="btn ghost" id="shop-close" style="margin-top:6px">닫기 (B)</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ================= 시작 화면 ================= -->
@@ -309,6 +397,7 @@
     <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 무기 교체</div>
     <div><kbd>F</kbd> 손전등</div>
     <div><kbd>휠</kbd> 무기 순환</div>
+    <div><kbd>B</kbd> 부하 상점</div>
     <div><kbd>ESC</kbd> 일시정지</div>
   </div>
   <div class="hint">헤드샷은 피해량이 크게 증가합니다 · 체육관은 넓지만 위험합니다</div>
@@ -371,6 +460,7 @@
 <script src="js/school.js"></script>
 <script src="js/zombie.js"></script>
 <script src="js/weapons.js"></script>
+<script src="js/ally.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

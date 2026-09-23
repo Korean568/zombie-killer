@@ -255,22 +255,48 @@ class Zombie {
 
     const reach = 1.35 + this.radius;
 
+    /*
+      부하가 곁에 있으면 플레이어 대신 부하를 문다.
+      추격 경로는 그대로 플레이어를 향하므로 부하는 '길을 막아 주는' 역할이 된다.
+    */
+    let meleeTarget = null;
+    let meleeDist = dist;
+    if (ctx.allies) {
+      for (let i = 0; i < ctx.allies.length; i++) {
+        const a = ctx.allies[i];
+        if (a.dead) continue;
+        const ax = a.pos.x - this.pos.x;
+        const az = a.pos.z - this.pos.z;
+        const ad = Math.hypot(ax, az);
+        if (ad < meleeDist) {
+          meleeDist = ad;
+          meleeTarget = a;
+        }
+      }
+    }
+
     /* 공격 */
     if (this.windup > 0) {
       this.windup -= dt;
       if (this.windup <= 0) {
-        if (dist < reach + 0.6 && ctx.damagePlayer) {
+        const t = this.windupTarget;
+        if (t && !t.dead) {
+          const td = Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z);
+          if (td < reach + 0.6 && ctx.damageAlly) ctx.damageAlly(t, this.dmg);
+        } else if (!t && dist < reach + 0.6 && ctx.damagePlayer) {
           ctx.damagePlayer(this.dmg, this);
         }
         this.attackTimer = this.attackCd;
+        this.windupTarget = null;
       }
       this._faceTowards(dx, dz, dt, 9);
       this._animateAttack();
       return;
     }
 
-    if (dist < reach && this.attackTimer <= 0) {
+    if (meleeDist < reach && this.attackTimer <= 0) {
       this.windup = 0.32;
+      this.windupTarget = meleeTarget; // null 이면 플레이어
       this._animateAttack();
       return;
     }
