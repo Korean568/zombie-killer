@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 18; // 로드된 번들 확인용
+window.GAME_BUILD = 19; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -287,7 +287,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       휴대폰은 화면 밀도가 3배씩 되는 경우가 많아 그대로 그리면
       픽셀 수가 9배가 되어 프레임이 무너진다. 1배로 제한한다.
     */
-    const cap = TOUCH.enabled ? 1 : q === 'low' ? 1 : q === 'high' ? 2 : 1.5;
+    const cap = TOUCH.enabled ? 1.5 : q === 'low' ? 1 : q === 'high' ? 2 : 1.5;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
     flashlight.castShadow = q === 'high' && !TOUCH.enabled;
     flashlight.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512);
