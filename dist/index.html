@@ -1,0 +1,359 @@
+<title>폐교 좀비 킬러</title>
+<style>
+  :root{
+    color-scheme:dark;
+    --red:#c4281f;
+    --red-dim:#7d1b15;
+    --ink:#0a0b0c;
+    --paper:#d8d4c6;
+    --muted:#8a8f84;
+    --accent:#9fb84a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;overflow:hidden;background:#000;}
+  body{
+    font-family:"Pretendard","Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    color:var(--paper);
+    -webkit-user-select:none;user-select:none;
+    cursor:default;
+  }
+  canvas{display:block;position:fixed;inset:0;width:100%;height:100%;}
+
+  /* ============ 공통 오버레이 ============ */
+  .overlay{position:fixed;inset:0;pointer-events:none;}
+
+  #vignette{
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,.55) 78%, rgba(0,0,0,.85) 100%);
+    z-index:5;
+  }
+  #grain{
+    z-index:6;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.6'/></svg>");
+  }
+  #damage-flash{
+    z-index:7;opacity:0;transition:opacity .12s ease-out;
+    background:radial-gradient(ellipse at center, rgba(160,0,0,0) 30%, rgba(150,8,8,.65) 100%);
+  }
+  #lowhp{
+    z-index:7;opacity:0;
+    background:radial-gradient(ellipse at center, rgba(120,0,0,0) 25%, rgba(120,0,0,.5) 100%);
+    animation:pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:.6}}
+
+  /* ============ HUD ============ */
+  #hud{position:fixed;inset:0;z-index:10;pointer-events:none;opacity:0;transition:opacity .3s;}
+  #hud.on{opacity:1;}
+
+  /* 조준점 */
+  #crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:44px;height:44px;}
+  #crosshair i{
+    position:absolute;background:rgba(235,235,225,.85);box-shadow:0 0 3px rgba(0,0,0,.9);
+    transition:none;
+  }
+  #ch-t,#ch-b{width:2px;height:8px;left:21px;}
+  #ch-l,#ch-r{height:2px;width:8px;top:21px;}
+  #ch-dot{width:2px;height:2px;left:21px;top:21px;background:rgba(255,80,60,.9);}
+  #hitmarker{
+    position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) rotate(45deg);
+    width:22px;height:22px;opacity:0;
+  }
+  #hitmarker i{position:absolute;background:#fff;box-shadow:0 0 4px #000;}
+  #hitmarker i:nth-child(1){width:2px;height:8px;left:10px;top:0;}
+  #hitmarker i:nth-child(2){width:2px;height:8px;left:10px;bottom:0;}
+  #hitmarker i:nth-child(3){height:2px;width:8px;top:10px;left:0;}
+  #hitmarker i:nth-child(4){height:2px;width:8px;top:10px;right:0;}
+  #hitmarker.kill i{background:#ff4a3a;}
+
+  /* 좌상단 */
+  #panel-tl{position:fixed;left:26px;top:22px;}
+  .wave-label{font-size:11px;letter-spacing:.32em;color:var(--muted);text-transform:uppercase;}
+  .wave-num{font-size:40px;font-weight:800;line-height:1;letter-spacing:-.02em;
+    text-shadow:0 2px 12px rgba(0,0,0,.9);}
+  .wave-num em{font-style:normal;color:var(--red);}
+  #remaining{margin-top:6px;font-size:13px;color:#c9c4b4;}
+  #remaining b{color:var(--paper);font-weight:700;}
+  #killcount{margin-top:2px;font-size:12px;color:var(--muted);}
+
+  /* 상단 중앙 메시지 */
+  #announce{
+    position:fixed;left:50%;top:14%;transform:translateX(-50%);
+    text-align:center;opacity:0;transition:opacity .35s;
+  }
+  #announce .big{font-size:38px;font-weight:800;letter-spacing:.06em;
+    text-shadow:0 0 22px rgba(196,40,31,.7),0 2px 10px #000;}
+  #announce .sub{font-size:15px;color:#cfc9b8;margin-top:6px;letter-spacing:.14em;}
+
+  #toasts{position:fixed;left:50%;top:26%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .toast{font-size:14px;letter-spacing:.06em;background:rgba(10,11,12,.6);
+    border-left:3px solid var(--accent);padding:5px 14px;
+    animation:toastIn .25s ease-out, toastOut .4s ease-in 1.6s forwards;}
+  .toast.warn{border-left-color:var(--red);}
+  @keyframes toastIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(-8px)}}
+
+  /* 좌하단 - 체력 */
+  #panel-bl{position:fixed;left:26px;bottom:26px;width:260px;}
+  .bar-label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11px;letter-spacing:.24em;color:var(--muted);margin-bottom:5px;}
+  .bar-label b{font-size:20px;font-weight:800;color:var(--paper);letter-spacing:0;}
+  .bar{height:9px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+    position:relative;overflow:hidden;}
+  .bar>span{position:absolute;inset:0;transform-origin:left;transition:transform .12s linear;}
+  #hp-fill{background:linear-gradient(90deg,#8e1b13,#e0402c);}
+  #hp-fill.low{animation:hpblink .6s steps(2) infinite;}
+  @keyframes hpblink{50%{opacity:.4}}
+  #stam-fill{background:linear-gradient(90deg,#3d6b2f,#9fb84a);}
+  #stam-wrap{margin-top:9px;}
+  #stam-wrap .bar{height:5px;}
+
+  /* 우하단 - 탄약 */
+  #panel-br{position:fixed;right:28px;bottom:24px;text-align:right;}
+  #wname{font-size:12px;letter-spacing:.3em;color:var(--muted);margin-bottom:2px;}
+  #ammo{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.02em;
+    text-shadow:0 2px 14px rgba(0,0,0,.9);}
+  #ammo.empty{color:var(--red);}
+  #ammo small{font-size:20px;color:var(--muted);font-weight:600;}
+  #slots{display:flex;gap:6px;justify-content:flex-end;margin-top:10px;}
+  .slot{font-size:11px;letter-spacing:.1em;padding:4px 9px;border:1px solid rgba(255,255,255,.18);
+    color:var(--muted);background:rgba(10,11,12,.45);}
+  .slot.active{color:var(--paper);border-color:var(--red);background:rgba(120,20,15,.35);}
+  .slot.locked{opacity:.3;}
+  .slot i{font-style:normal;color:#6c7166;margin-right:5px;}
+
+  #reload-ind{margin-top:8px;font-size:12px;letter-spacing:.2em;color:#e4c14a;opacity:0;}
+  #reload-ind.on{opacity:1;}
+  #reload-bar{height:3px;width:120px;margin-left:auto;margin-top:4px;background:rgba(255,255,255,.12);opacity:0;}
+  #reload-bar.on{opacity:1;}
+  #reload-bar>span{display:block;height:100%;width:0;background:#e4c14a;}
+
+  #compass{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+    font-size:11px;letter-spacing:.3em;color:rgba(200,196,182,.45);}
+
+  /* ============ 화면들 ============ */
+  .screen{
+    position:fixed;inset:0;z-index:30;display:none;
+    flex-direction:column;align-items:center;justify-content:center;
+    /* 뒤편 복도가 흐릿하게 비치도록 반투명 */
+    background:radial-gradient(ellipse at center,rgba(18,20,24,.84) 0%,rgba(4,5,7,.95) 70%);
+    backdrop-filter:blur(5px) saturate(.75);
+    text-align:center;padding:24px;
+  }
+  .screen.show{display:flex;}
+  .screen h1{
+    font-size:clamp(38px,8vw,84px);font-weight:900;letter-spacing:.02em;line-height:.95;
+    text-shadow:0 0 40px rgba(196,40,31,.35);
+  }
+  .screen h1 em{font-style:normal;color:var(--red);
+    text-shadow:0 0 30px rgba(196,40,31,.8);}
+  .tagline{margin-top:10px;font-size:14px;letter-spacing:.42em;color:var(--muted);text-transform:uppercase;}
+
+  .card{margin-top:34px;background:rgba(14,16,18,.72);border:1px solid rgba(255,255,255,.1);
+    padding:22px 26px;max-width:680px;width:100%;backdrop-filter:blur(3px);}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;margin-bottom:14px;}
+  .row:last-child{margin-bottom:0;}
+  .row-title{width:100%;font-size:11px;letter-spacing:.3em;color:var(--muted);margin-bottom:8px;text-align:center;}
+  .opt{
+    pointer-events:auto;cursor:pointer;padding:9px 20px;font-size:14px;font-weight:600;
+    border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.03);color:#b9b5a6;
+    transition:all .14s;letter-spacing:.04em;
+  }
+  .opt:hover{border-color:rgba(255,255,255,.4);color:#fff;}
+  .opt.sel{background:var(--red-dim);border-color:var(--red);color:#fff;}
+  .opt small{display:block;font-size:10px;font-weight:400;opacity:.7;margin-top:2px;letter-spacing:0;}
+
+  .slider-row{display:flex;align-items:center;gap:12px;justify-content:center;}
+  .slider-row input{width:220px;accent-color:var(--red);cursor:pointer;}
+  .slider-row span{font-size:13px;color:#b9b5a6;min-width:46px;text-align:left;}
+
+  .btn{
+    pointer-events:auto;cursor:pointer;margin-top:26px;padding:16px 56px;
+    font-size:19px;font-weight:800;letter-spacing:.18em;
+    background:var(--red);color:#fff;border:none;
+    box-shadow:0 0 0 1px rgba(255,255,255,.12), 0 10px 40px rgba(196,40,31,.35);
+    transition:transform .12s, box-shadow .12s, background .12s;
+  }
+  .btn:hover{background:#d93529;transform:translateY(-2px);
+    box-shadow:0 0 0 1px rgba(255,255,255,.2), 0 14px 46px rgba(196,40,31,.5);}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.25);color:#cfcabb;
+    box-shadow:none;font-size:15px;padding:12px 34px;letter-spacing:.14em;}
+  .btn.ghost:hover{background:rgba(255,255,255,.07);transform:none;box-shadow:none;}
+
+  .keys{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:10px 22px;max-width:680px;width:100%;font-size:13px;color:#a5a294;}
+  .keys div{display:flex;gap:10px;align-items:center;justify-content:flex-start;}
+  kbd{
+    display:inline-block;min-width:26px;padding:3px 7px;font-size:11px;font-weight:700;
+    font-family:inherit;color:#ded9c9;background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.18);border-bottom-width:2px;text-align:center;
+  }
+  .hint{margin-top:22px;font-size:12px;color:#6f7368;letter-spacing:.1em;}
+
+  /* 게임오버 통계 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:18px;margin-top:8px;}
+  .stat{text-align:center;}
+  .stat b{display:block;font-size:30px;font-weight:800;line-height:1.1;}
+  .stat span{font-size:11px;letter-spacing:.2em;color:var(--muted);}
+  .stat.hl b{color:var(--red);}
+
+  #gameover h1{color:var(--red);text-shadow:0 0 50px rgba(196,40,31,.6);}
+  #pause h1{font-size:44px;}
+
+  #loading{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
+    background:#050607;flex-direction:column;gap:18px;}
+  #loading .spin{width:38px;height:38px;border:2px solid rgba(255,255,255,.15);
+    border-top-color:var(--red);border-radius:50%;animation:sp .8s linear infinite;}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  #loading p{font-size:13px;letter-spacing:.3em;color:var(--muted);}
+
+  #warn-mobile{display:none;position:fixed;inset:0;z-index:60;background:#050607;
+    align-items:center;justify-content:center;padding:30px;text-align:center;flex-direction:column;gap:14px;}
+  @media (pointer:coarse){
+    #warn-mobile{display:flex;}
+  }
+</style>
+<canvas id="game"></canvas>
+
+<div class="overlay" id="vignette"></div>
+<div class="overlay" id="grain"></div>
+<div class="overlay" id="lowhp"></div>
+<div class="overlay" id="damage-flash"></div>
+
+<!-- ================= HUD ================= -->
+<div id="hud">
+  <div id="crosshair">
+    <i id="ch-t"></i><i id="ch-b"></i><i id="ch-l"></i><i id="ch-r"></i><i id="ch-dot"></i>
+  </div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+
+  <div id="panel-tl">
+    <div class="wave-label">WAVE</div>
+    <div class="wave-num"><em id="wave">1</em></div>
+    <div id="remaining">남은 좀비 <b>0</b></div>
+    <div id="killcount">처치 0 · 생존 0:00</div>
+  </div>
+
+  <div id="announce"><div class="big"></div><div class="sub"></div></div>
+  <div id="toasts"></div>
+
+  <div id="panel-bl">
+    <div class="bar-label"><span>체력</span><b id="hp-text">100</b></div>
+    <div class="bar"><span id="hp-fill"></span></div>
+    <div id="stam-wrap">
+      <div class="bar"><span id="stam-fill"></span></div>
+    </div>
+  </div>
+
+  <div id="panel-br">
+    <div id="wname">권총</div>
+    <div id="ammo">12 <small>/ ∞</small></div>
+    <div id="reload-ind">재장전 중</div>
+    <div id="reload-bar"><span></span></div>
+    <div id="slots"></div>
+  </div>
+
+  <div id="compass">F 손전등 · R 재장전 · 1 2 3 무기</div>
+</div>
+
+<!-- ================= 시작 화면 ================= -->
+<div class="screen show" id="start">
+  <h1>폐교 : <em>좀비 킬러</em></h1>
+  <div class="tagline">Abandoned School — Survive the Night</div>
+
+  <div class="card">
+    <div class="row">
+      <div class="row-title">난이도</div>
+      <button class="opt" data-diff="easy">신입생<small>여유로운 진입</small></button>
+      <button class="opt sel" data-diff="normal">재학생<small>표준</small></button>
+      <button class="opt" data-diff="hard">졸업생<small>가혹함</small></button>
+    </div>
+    <div class="row">
+      <div class="row-title">그래픽 품질</div>
+      <button class="opt" data-quality="low">낮음</button>
+      <button class="opt sel" data-quality="medium">보통</button>
+      <button class="opt" data-quality="high">높음<small>그림자</small></button>
+    </div>
+    <div class="row">
+      <div class="row-title">마우스 감도</div>
+      <div class="slider-row">
+        <input type="range" id="sens" min="20" max="300" value="100">
+        <span id="sens-val">1.00</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="row-title">음량</div>
+      <div class="slider-row">
+        <input type="range" id="vol" min="0" max="100" value="70">
+        <span id="vol-val">70%</span>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn" id="btn-start">시작하기</button>
+
+  <div class="keys">
+    <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동</div>
+    <div><kbd>Shift</kbd> 질주</div>
+    <div><kbd>Space</kbd> 점프</div>
+    <div><kbd>Ctrl</kbd> 앉기</div>
+    <div><kbd>클릭</kbd> 발사</div>
+    <div><kbd>R</kbd> 재장전</div>
+    <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 무기 교체</div>
+    <div><kbd>F</kbd> 손전등</div>
+    <div><kbd>휠</kbd> 무기 순환</div>
+    <div><kbd>ESC</kbd> 일시정지</div>
+  </div>
+  <div class="hint">헤드샷은 피해량이 크게 증가합니다 · 체육관은 넓지만 위험합니다</div>
+</div>
+
+<!-- ================= 일시정지 ================= -->
+<div class="screen" id="pause">
+  <h1>일시정지</h1>
+  <div class="card">
+    <div class="stats">
+      <div class="stat"><b id="p-wave">1</b><span>WAVE</span></div>
+      <div class="stat"><b id="p-kills">0</b><span>처치</span></div>
+      <div class="stat"><b id="p-time">0:00</b><span>생존</span></div>
+    </div>
+  </div>
+  <button class="btn" id="btn-resume">계속하기</button>
+  <button class="btn ghost" id="btn-quit">처음으로</button>
+  <div class="hint">화면을 클릭하면 다시 조준이 잠깁니다</div>
+</div>
+
+<!-- ================= 게임오버 ================= -->
+<div class="screen" id="gameover">
+  <h1>사 망</h1>
+  <div class="tagline" id="go-sub">학교는 다시 조용해졌다</div>
+  <div class="card">
+    <div class="stats">
+      <div class="stat hl"><b id="g-wave">1</b><span>도달 WAVE</span></div>
+      <div class="stat"><b id="g-kills">0</b><span>처치</span></div>
+      <div class="stat"><b id="g-head">0</b><span>헤드샷</span></div>
+      <div class="stat"><b id="g-acc">0%</b><span>명중률</span></div>
+      <div class="stat"><b id="g-time">0:00</b><span>생존 시간</span></div>
+    </div>
+  </div>
+  <button class="btn" id="btn-retry">다시 도전</button>
+  <button class="btn ghost" id="btn-menu">처음으로</button>
+</div>
+
+<div id="loading"><div class="spin"></div><p>폐교를 재구성하는 중…</p></div>
+
+<div id="warn-mobile">
+  <h1 style="font-size:28px">데스크톱 전용</h1>
+  <p style="color:#8a8f84;font-size:14px;line-height:1.7">
+    이 게임은 마우스 포인터 잠금과 키보드를 사용합니다.<br>
+    PC 브라우저에서 실행해 주세요.
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/textures.js"></script>
+<script src="js/school.js"></script>
+<script src="js/zombie.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/game.js"></script>
