@@ -109,7 +109,20 @@ const TOUCH = (function () {
     return b;
   }
 
+  /*
+    메뉴/상점 위의 터치는 브라우저가 처리해야 버튼이 눌린다.
+    그 외(게임 화면)에서는 기본 동작을 막아 페이지가 스크롤되지 않게 한다.
+    이걸 안 막으면 시점을 드래그할 때마다 주소창이 나타났다 사라지며
+    화면 높이가 바뀌어 화면이 위아래로 튄다.
+  */
+  function overUI(e) {
+    const t = e.target;
+    return !!(t && t.closest && t.closest('#shop, .screen'));
+  }
+
   function onStart(e) {
+    if (overUI(e)) return;
+    e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       // 버튼 위에서 시작한 터치는 버튼이 이미 처리했다
@@ -134,6 +147,8 @@ const TOUCH = (function () {
   }
 
   function onMove(e) {
+    if (overUI(e)) return;
+    e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       if (t.identifier === stickId) {
@@ -160,6 +175,7 @@ const TOUCH = (function () {
   }
 
   function onEnd(e) {
+    if (!overUI(e)) e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
       if (t.identifier === stickId) {

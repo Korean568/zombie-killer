@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 17; // 로드된 번들 확인용
+window.GAME_BUILD = 18; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -246,26 +246,50 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     viewFlash.position.set(0.2, -0.1, -0.75);
     viewScene.add(viewFlash);
 
-    window.addEventListener('resize', onResize);
+    let resizeQueued = false;
+    const queueResize = function () {
+      if (resizeQueued) return;
+      resizeQueued = true;
+      setTimeout(function () {
+        resizeQueued = false;
+        onResize();
+      }, 120);
+    };
+    window.addEventListener('resize', queueResize);
+    window.addEventListener('orientationchange', queueResize);
   }
 
+  let lastW = 0;
+  let lastH = 0;
   function onResize() {
     if (!renderer) return;
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    /*
+      주소창이 접히는 정도(수십 px)로는 다시 그리지 않는다.
+      매번 setSize 를 부르면 프레임이 튀고 화면이 출렁인다.
+    */
+    if (Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 64) return;
+    lastW = w;
+    lastH = h;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
     if (viewCamera) {
       viewCamera.aspect = camera.aspect;
       viewCamera.updateProjectionMatrix();
     }
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(w, h);
   }
 
   function applyQuality() {
     const q = settings.quality;
-    renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio || 1, q === 'low' ? 1 : q === 'high' ? 2 : 1.5)
-    );
-    flashlight.castShadow = q === 'high';
+    /*
+      휴대폰은 화면 밀도가 3배씩 되는 경우가 많아 그대로 그리면
+      픽셀 수가 9배가 되어 프레임이 무너진다. 1배로 제한한다.
+    */
+    const cap = TOUCH.enabled ? 1 : q === 'low' ? 1 : q === 'high' ? 2 : 1.5;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
+    flashlight.castShadow = q === 'high' && !TOUCH.enabled;
     flashlight.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512);
     scene.fog.density = q === 'low' ? 0.03 : 0.024;
     onResize();

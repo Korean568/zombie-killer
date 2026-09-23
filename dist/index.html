@@ -10,7 +10,20 @@
     --accent:#9fb84a;
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;overflow:hidden;background:#000;}
+  /*
+    모바일에서 body 를 fixed 로 고정한다.
+    높이를 100% 로만 두면 주소창이 접히고 펼쳐질 때마다 뷰포트가 바뀌어
+    캔버스가 계속 리사이즈되면서 화면이 출렁인다.
+  */
+  html,body{
+    height:100%;overflow:hidden;background:#000;
+    overscroll-behavior:none;  /* 당겨서 새로고침 차단 */
+  }
+  body{
+    position:fixed;inset:0;width:100%;
+    touch-action:none;         /* 스크롤·확대 제스처 차단 */
+  }
+  canvas{touch-action:none;}
   body{
     font-family:"Pretendard","Noto Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
     color:var(--paper);
