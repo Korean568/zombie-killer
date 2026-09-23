@@ -419,6 +419,73 @@ const SFX = (function () {
     n.stop(t + 0.13);
   }
 
+
+  /* ---------- 점프스케어 비명 ---------- */
+  function scream() {
+    if (!ctx) return;
+    const t = now();
+    const dur = 1.5;
+
+    // 왜곡용 웨이브셰이퍼
+    const shaper = ctx.createWaveShaper();
+    const n = 1024;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((1 + 8) * x) / (1 + 8 * Math.abs(x));
+    }
+    shaper.curve = curve;
+
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(1.0, t + 0.02);
+    out.gain.setValueAtTime(1.0, t + dur * 0.55);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    shaper.connect(out);
+    out.connect(master);
+
+    // 겹쳐서 내리꽂는 톱니파 세 겹
+    [1, 1.008, 0.496].forEach(function (mul, i) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = i === 2 ? 'square' : 'sawtooth';
+      o.frequency.setValueAtTime(rand(760, 980) * mul, t);
+      o.frequency.exponentialRampToValueAtTime(rand(150, 230) * mul, t + dur * 0.8);
+      g.gain.value = i === 2 ? 0.22 : 0.3;
+      o.connect(g);
+      g.connect(shaper);
+      o.start(t);
+      o.stop(t + dur);
+    });
+
+    // 거친 숨/잡음
+    const nz = noiseSource();
+    const nf = ctx.createBiquadFilter();
+    const ng = ctx.createGain();
+    nf.type = 'bandpass';
+    nf.frequency.setValueAtTime(2200, t);
+    nf.frequency.exponentialRampToValueAtTime(420, t + dur);
+    nf.Q.value = 0.8;
+    ng.gain.value = 0.35;
+    nz.connect(nf);
+    nf.connect(ng);
+    ng.connect(shaper);
+    nz.start(t);
+    nz.stop(t + dur);
+
+    // 바닥을 치는 저역 충격
+    const sub = ctx.createOscillator();
+    const sg = ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(120, t);
+    sub.frequency.exponentialRampToValueAtTime(28, t + 0.9);
+    env(sg, t, 0.9, 0.004, 0.9);
+    sub.connect(sg);
+    sg.connect(master);
+    sub.start(t);
+    sub.stop(t + 1.0);
+  }
+
   /* ---------- 게임오버 ---------- */
   function gameOver() {
     if (!ctx) return;
@@ -537,6 +604,7 @@ const SFX = (function () {
     waveClear,
     step,
     gameOver,
+    scream,
     startAmbient,
     stopAmbient,
     heartbeat,

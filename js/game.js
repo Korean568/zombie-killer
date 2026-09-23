@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 20; // 로드된 번들 확인용
+window.GAME_BUILD = 23; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -1689,10 +1689,41 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     updateAmmoHud();
   }
 
+  /*
+    사망 점프스케어.
+    좀비 얼굴이 화면을 덮치고 비명이 난 뒤 게임오버로 넘어간다.
+  */
+  function playJumpscare() {
+    const box = $('#jumpscare');
+    const face = $('#js-face');
+    const flash = $('#js-flash');
+
+    face.style.backgroundImage = 'url(' + TEX.jumpscareFace() + ')';
+    box.classList.remove('out');
+    box.classList.add('on');
+
+    // 애니메이션을 처음부터 다시 돌리려면 한 번 끊어 줘야 한다
+    [face, flash].forEach(function (elm) {
+      elm.style.animation = 'none';
+      void elm.offsetWidth;
+      elm.style.animation = '';
+    });
+
+    SFX.scream();
+
+    setTimeout(function () {
+      box.classList.add('out');
+    }, 1250);
+    setTimeout(function () {
+      box.classList.remove('on', 'out');
+    }, 1700);
+  }
+
   function die() {
     shopOpen = false;
     el.shop.classList.remove('show');
     state = 'dead';
+    playJumpscare();
     SFX.gameOver();
     SFX.stopAmbient();
     document.exitPointerLock && document.exitPointerLock();
@@ -1706,7 +1737,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     $('#g-time').textContent = fmtTime(stats.time);
     $('#go-sub').textContent =
       wave >= 10 ? '전설이 되어 쓰러졌다' : wave >= 5 ? '꽤 오래 버텼다' : '학교는 다시 조용해졌다';
-    setTimeout(() => showScreen('gameover'), 900);
+    setTimeout(() => showScreen('gameover'), 1750);
   }
 
   function pauseGame() {

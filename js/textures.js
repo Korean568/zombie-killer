@@ -476,6 +476,153 @@ const TEX = (function () {
     return cache[key];
   }
 
+
+  /* ---------- 점프스케어용 좀비 얼굴 ---------- */
+  function jumpscareFace() {
+    if (cache.scareFace) return cache.scareFace;
+    const s = 768;
+    const c = cv(s);
+    const ctx = c.getContext('2d');
+    const cx = s / 2;
+    const cy = s * 0.5;
+
+    ctx.fillStyle = '#070605';
+    ctx.fillRect(0, 0, s, s);
+
+    /* 얼굴 덩어리 */
+    const skin = ctx.createRadialGradient(cx, cy - s * 0.12, s * 0.04, cx, cy, s * 0.5);
+    skin.addColorStop(0, '#c2bfa2');
+    skin.addColorStop(0.45, '#8e8d72');
+    skin.addColorStop(0.78, '#55583f');
+    skin.addColorStop(1, '#1a1c14');
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, s * 0.33, s * 0.44, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* 광대와 관자놀이 음영 */
+    ctx.globalCompositeOperation = 'multiply';
+    [[-0.19, -0.02, 0.1], [0.19, -0.02, 0.1], [0, 0.3, 0.16]].forEach(function (p) {
+      const g = ctx.createRadialGradient(
+        cx + p[0] * s, cy + p[1] * s, 2, cx + p[0] * s, cy + p[1] * s, s * p[2]
+      );
+      g.addColorStop(0, 'rgba(60,58,44,1)');
+      g.addColorStop(1, 'rgba(255,255,255,1)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, s, s);
+    });
+    ctx.globalCompositeOperation = 'source-over';
+
+    /* 눈구멍 + 붉은 눈 */
+    function socket(ex, ey) {
+      const g = ctx.createRadialGradient(ex, ey, 2, ex, ey, s * 0.115);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.62, 'rgba(10,6,5,.95)');
+      g.addColorStop(1, 'rgba(20,16,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, s * 0.115, s * 0.088, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 눈알
+      ctx.fillStyle = '#d8d2c0';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey + s * 0.006, s * 0.052, s * 0.04, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 실핏줄
+      ctx.strokeStyle = 'rgba(150,20,14,.75)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 9; i++) {
+        const a = Math.random() * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(ex + Math.cos(a) * s * 0.012, ey + Math.sin(a) * s * 0.01);
+        ctx.lineTo(ex + Math.cos(a) * s * 0.05, ey + Math.sin(a) * s * 0.038);
+        ctx.stroke();
+      }
+      // 홍채
+      const ig = ctx.createRadialGradient(ex, ey, 1, ex, ey, s * 0.024);
+      ig.addColorStop(0, '#ff6a4a');
+      ig.addColorStop(0.5, '#b0170c');
+      ig.addColorStop(1, '#2a0603');
+      ctx.fillStyle = ig;
+      ctx.beginPath();
+      ctx.arc(ex, ey, s * 0.024, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(ex, ey, s * 0.009, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    socket(cx - s * 0.145, cy - s * 0.1);
+    socket(cx + s * 0.145, cy - s * 0.1);
+
+    /* 코 */
+    ctx.fillStyle = 'rgba(8,6,4,.92)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s * 0.02);
+    ctx.lineTo(cx - s * 0.042, cy + s * 0.075);
+    ctx.lineTo(cx + s * 0.042, cy + s * 0.075);
+    ctx.closePath();
+    ctx.fill();
+
+    /* 벌어진 입 */
+    ctx.fillStyle = '#0a0403';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + s * 0.22, s * 0.15, s * 0.135, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* 이빨 */
+    ctx.fillStyle = '#cfc6a8';
+    const tw = s * 0.032;
+    for (let i = -4; i <= 4; i++) {
+      const tx = cx + i * tw;
+      const h = s * (0.03 + Math.random() * 0.026);
+      // 윗니
+      ctx.beginPath();
+      ctx.moveTo(tx - tw * 0.42, cy + s * 0.09);
+      ctx.lineTo(tx + tw * 0.42, cy + s * 0.09);
+      ctx.lineTo(tx, cy + s * 0.09 + h);
+      ctx.closePath();
+      ctx.fill();
+      // 아랫니
+      if (Math.random() > 0.25) {
+        const h2 = s * (0.024 + Math.random() * 0.022);
+        ctx.beginPath();
+        ctx.moveTo(tx - tw * 0.4, cy + s * 0.352);
+        ctx.lineTo(tx + tw * 0.4, cy + s * 0.352);
+        ctx.lineTo(tx, cy + s * 0.352 - h2);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    /* 입가 핏자국 */
+    for (let i = 0; i < 16; i++) {
+      const bx = cx + rand(-0.15, 0.15) * s;
+      const by = cy + s * 0.33 + Math.random() * s * 0.12;
+      ctx.fillStyle = 'rgba(' + randInt(90, 140) + ',6,6,' + rand(0.4, 0.9).toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.ellipse(bx, by, rand(3, 11), rand(8, 34), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    /* 피부 얼룩과 갈라짐 */
+    blotches(ctx, s, 40, 'rgba(46,26,20,ALPHA)', 10, 70, 0.55);
+    blotches(ctx, s, 16, 'rgba(120,18,12,ALPHA)', 6, 34, 0.5);
+    cracks(ctx, s, 26, 'rgba(24,14,10,0.55)', 2.4);
+    grain(ctx, s, 26);
+
+    /* 가장자리를 어둠에 묻는다 */
+    const vig = ctx.createRadialGradient(cx, cy, s * 0.26, cx, cy, s * 0.56);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,1)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, s, s);
+
+    cache.scareFace = c.toDataURL('image/png');
+    return cache.scareFace;
+  }
+
   /* ---------- 하늘/배경 없음: 안개색만 사용 ---------- */
 
   return {
@@ -492,5 +639,6 @@ const TEX = (function () {
     bulletHole,
     poster,
     zombieSkin,
+    jumpscareFace,
   };
 })();

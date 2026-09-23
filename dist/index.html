@@ -278,6 +278,42 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   #loading p{font-size:13px;letter-spacing:.3em;color:var(--muted);}
 
+  /* ============ 점프스케어 ============ */
+  #jumpscare{
+    /* 흔들 때 검은 테두리가 보이지 않도록 화면보다 조금 크게 */
+    position:fixed;inset:-14px;z-index:45;display:none;
+    background:#000;overflow:hidden;
+  }
+  #jumpscare.on{display:block;animation:jsShake .07s steps(2) infinite;}
+  @keyframes jsShake{
+    0%{transform:translate(-7px,-4px)}
+    50%{transform:translate(6px,4px)}
+    100%{transform:translate(-3px,6px)}
+  }
+  #js-face{
+    position:absolute;inset:0;
+    background-position:center 58%;background-size:cover;background-repeat:no-repeat;
+    transform-origin:center;
+    animation:jsLunge .36s cubic-bezier(.16,.92,.28,1) forwards;
+  }
+  @keyframes jsLunge{
+    from{transform:scale(2.1);opacity:.12;filter:brightness(.25) contrast(1.35)}
+    40%{opacity:1;filter:brightness(1.45) contrast(1.2)}
+    to{transform:scale(1.08);opacity:1;filter:brightness(1.05) contrast(1.15)}
+  }
+  #js-flash{
+    position:absolute;inset:0;background:#c21a0c;mix-blend-mode:screen;
+    animation:jsFlash .42s ease-out forwards;
+  }
+  @keyframes jsFlash{from{opacity:.5}to{opacity:0}}
+  #jumpscare.out{animation:jsOut .45s ease-in forwards;}
+  @keyframes jsOut{to{opacity:0}}
+
+  @media (prefers-reduced-motion: reduce){
+    #jumpscare.on{animation:none;}
+    #js-face{animation:jsLunge .36s ease-out forwards;}
+  }
+
   /* ============ 모바일 터치 조작 ============ */
   #touch-ui{position:fixed;inset:0;z-index:12;pointer-events:none;display:none;}
   body.touch-mode #touch-ui{display:block;}
@@ -543,6 +579,8 @@
   <button class="btn" id="btn-retry">다시 도전</button>
   <button class="btn ghost" id="btn-menu">처음으로</button>
 </div>
+
+<div id="jumpscare"><div id="js-face"></div><div id="js-flash"></div></div>
 
 <div id="loading"><div class="spin"></div><p>폐교를 재구성하는 중…</p></div>
 
