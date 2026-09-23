@@ -321,26 +321,55 @@
   /* 상단 보조 버튼 */
   .tc-top{position:fixed;right:14px;top:calc(10px + env(safe-area-inset-top, 0px));
     display:flex;gap:7px;align-items:center;}
-  .tc-top .tc-btn{width:46px;height:38px;border-radius:9px;font-size:11px;}
-  .tc-top .tc-shop{width:64px;color:#e4c14a;border-color:rgba(228,193,74,.45);}
-  .tc-top .tc-light{width:56px;}
-  .tc-top .tc-pause{width:42px;font-size:13px;}
+  .tc-top{gap:5px;left:12px;right:12px;justify-content:flex-end;}
+  .tc-top .tc-btn{width:38px;height:34px;border-radius:8px;font-size:11px;flex:0 0 auto;}
+  .tc-top .tc-shop{width:54px;font-size:10px;color:#e4c14a;border-color:rgba(228,193,74,.45);}
+  .tc-top .tc-light{width:46px;font-size:10px;}
+  .tc-top .tc-pause{width:36px;font-size:12px;}
 
-  /* 모바일에서는 HUD를 조금 줄이고 키 안내를 숨긴다 */
+  /*
+    모바일 HUD 배치.
+    상단 버튼 줄이 화면 폭을 거의 다 쓰므로, 좌상단 정보는 그 아래에서 시작한다.
+    (--tc-top: 버튼 줄이 끝나는 높이)
+  */
+  body.touch-mode{--tc-top:calc(54px + env(safe-area-inset-top, 0px));}
   body.touch-mode #compass{display:none;}
   body.touch-mode #shop-hint{display:none;}
-  body.touch-mode #panel-tl{left:14px;top:calc(12px + env(safe-area-inset-top, 0px));}
-  body.touch-mode .wave-num{font-size:30px;}
-  body.touch-mode #panel-bl{left:14px;bottom:auto;
-    top:calc(56px + env(safe-area-inset-top, 0px));width:150px;}
-  body.touch-mode #panel-br{right:16px;bottom:auto;
-    top:calc(56px + env(safe-area-inset-top, 0px));}
-  body.touch-mode #ammo{font-size:30px;}
-  body.touch-mode #ammo small{font-size:15px;}
   body.touch-mode #slots{display:none;}
   body.touch-mode .keys{display:none;}
-  body.touch-mode #announce .big{font-size:26px;}
-  body.touch-mode #announce .sub{font-size:12px;}
+
+  /* 좌상단: 웨이브 / 남은 좀비 / 킬 포인트 / 분대 */
+  body.touch-mode #panel-tl{left:12px;top:var(--tc-top);max-width:44vw;}
+  body.touch-mode .wave-label{font-size:9px;letter-spacing:.2em;}
+  body.touch-mode .wave-num{font-size:24px;}
+  body.touch-mode #remaining{font-size:11px;margin-top:2px;}
+  body.touch-mode #killcount{font-size:10px;}
+  body.touch-mode #points{margin-top:6px;}
+  body.touch-mode #points b{font-size:16px;}
+  body.touch-mode #points span{font-size:9px;letter-spacing:.1em;}
+  body.touch-mode .squad-row{font-size:10px;gap:5px;}
+  body.touch-mode .squad-hp{width:40px;}
+
+  /* 우상단: 탄약 (버튼 줄 아래) */
+  body.touch-mode #panel-br{right:12px;bottom:auto;top:var(--tc-top);}
+  body.touch-mode #wname{font-size:9px;letter-spacing:.18em;}
+  body.touch-mode #ammo{font-size:26px;}
+  body.touch-mode #ammo small{font-size:13px;}
+  body.touch-mode #reload-ind{font-size:10px;margin-top:4px;}
+  body.touch-mode #reload-bar{width:80px;}
+
+  /* 좌하단: 체력 — 질주 버튼 위로 올린다 */
+  body.touch-mode #panel-bl{left:12px;bottom:104px;width:44vw;max-width:190px;}
+  body.touch-mode .bar-label{font-size:9px;letter-spacing:.16em;margin-bottom:3px;}
+  body.touch-mode .bar-label b{font-size:15px;}
+  body.touch-mode .bar{height:7px;}
+  body.touch-mode #stam-wrap{margin-top:5px;}
+
+  body.touch-mode #announce{top:24%;}
+  body.touch-mode #announce .big{font-size:22px;}
+  body.touch-mode #announce .sub{font-size:11px;}
+  body.touch-mode #toasts{top:34%;}
+  body.touch-mode .toast{font-size:11px;padding:4px 10px;}
 
   /* 작은 화면에서 시작/상점 화면이 넘치지 않도록 */
   @media (max-height:560px){
