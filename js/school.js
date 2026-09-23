@@ -23,6 +23,21 @@ const SCHOOL = (function () {
   const fixtures = []; // 형광등 {x,z,y,alive,phase,rate,base,on}
   const navCells = [];
 
+  /*
+    소품 충돌.
+    맵 전체를 매번 훑으면 수백 개를 검사하게 되므로,
+    각 소품을 자기가 걸치는 격자 칸에 등록해 두고(브로드페이즈)
+    충돌 검사 때는 주변 칸의 것만 본다.
+  */
+  const colliderCells = new Array(MAP_W * MAP_H);
+
+  /*
+    칸 중심이 '넘을 수 없는' 소품에 막혀 있는 칸.
+    경로 탐색(BFS)은 격자만 보기 때문에, 이런 칸을 목표로 잡으면
+    좀비가 기둥이나 의자 더미에 붙어 비비게 된다. 아예 길에서 제외한다.
+  */
+  const navBlocked = new Uint8Array(MAP_W * MAP_H);
+
   let root = null;
   let lightPool = [];
   let tubeMesh = null;
@@ -44,6 +59,28 @@ const SCHOOL = (function () {
   }
   function randInt(a, b) {
     return Math.floor(a + srng() * (b - a + 1));
+  }
+
+  /*
+    소품 콜라이더 등록.
+    회전한 가구는 회전을 무시하고 긴 변 기준으로 감싸는 AABB 로 다룬다
+    (책상 하나 때문에 OBB 판정까지 갈 필요는 없다).
+    tall = true 면 좀비도 넘지 못한다.
+  */
+  function addPropCollider(x, z, hw, hd, tall) {
+    const c = { x, z, hw, hd, tall: !!tall };
+    const gx0 = cx(x - hw);
+    const gx1 = cx(x + hw);
+    const gz0 = cz(z - hd);
+    const gz1 = cz(z + hd);
+    for (let gy = gz0; gy <= gz1; gy++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        if (!inBounds(gx, gy)) continue;
+        const k = idx(gx, gy);
+        if (!colliderCells[k]) colliderCells[k] = [];
+        colliderCells[k].push(c);
+      }
+    }
   }
 
   function isSolid(x, y) {
@@ -349,10 +386,16 @@ const SCHOOL = (function () {
           const flipped = rng() < 0.22;
           if (flipped) {
             desks.push(MAT(px, 0.45, pz, rand(-0.4, 0.4), rand(0, 6.28), Math.PI * 0.5 + rand(-0.4, 0.4)));
+            // 뒤집힌 책상은 아무 방향으로나 누워 있어 정사각으로 감싼다
+            addPropCollider(px, pz, 0.45, 0.45, false);
           } else {
             desks.push(MAT(px, 0, pz, 0, rand(-0.25, 0.25), 0));
+            addPropCollider(px, pz, 0.62, 0.36, false);
             if (rng() < 0.7) {
-              chairs.push(MAT(px + rand(-0.3, 0.3), 0, pz + rand(0.55, 0.95), 0, rand(-0.6, 0.6) + Math.PI, 0));
+              const cxp = px + rand(-0.3, 0.3);
+              const czp = pz + rand(0.55, 0.95);
+              chairs.push(MAT(cxp, 0, czp, 0, rand(-0.6, 0.6) + Math.PI, 0));
+              addPropCollider(cxp, czp, 0.24, 0.24, false);
             }
           }
         }
@@ -370,7 +413,12 @@ const SCHOOL = (function () {
 
     deskGroups.forEach((g) => instanced(scene, g.geo, propMat(g.color), desks));
     chairGroups.forEach((g) => instanced(scene, g.geo, propMat(g.color), chairs));
-    debrisGroups.forEach((g) => instanced(scene, g.geo, propMat(g.color), debris));
+    // 잔해는 작고 바닥에 붙어 있어 그림자를 드리워도 보이지 않는다.
+    // 그림자 패스에서 빼면 '높음' 품질에서 드로우콜이 그만큼 준다.
+    debrisGroups.forEach((g) => {
+      const im = instanced(scene, g.geo, propMat(g.color), debris);
+      if (im) im.castShadow = false;
+    });
 
     buildLockers(scene);
     buildBlackboards(scene);
@@ -389,7 +437,12 @@ const SCHOOL = (function () {
       metalness: 0.35,
     });
     const tr = [];
-    const push = (x, z, ry) => tr.push(MAT(x, 1.15, z, 0, ry, 0));
+    const push = (x, z, ry) => {
+      tr.push(MAT(x, 1.15, z, 0, ry, 0));
+      // 사물함은 2.2 x 0.55. 벽을 따라 놓이므로 방향에 맞춰 반치수를 준다
+      const alongX = Math.abs(Math.sin(ry)) < 0.5;
+      addPropCollider(x, z, alongX ? 1.1 : 0.3, alongX ? 0.3 : 1.1, true);
+    };
 
     for (let x = 1; x <= 31; x++) {
       // 복도 위쪽 벽 (y=6)
@@ -522,6 +575,7 @@ const SCHOOL = (function () {
       pole.position.set(gxc, 2.7, z);
       pole.castShadow = true;
       scene.add(pole);
+      addPropCollider(gxc, z, 0.28, 0.28, true);
       const board = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.0, 0.12), boardMat);
       board.position.set(gxc, 4.5, z + dir * 0.9);
       board.castShadow = true;
@@ -532,7 +586,7 @@ const SCHOOL = (function () {
       scene.add(rim);
     });
 
-    // 낡은 체조 매트
+    // 낡은 체조 매트 (높이 22cm 라 걸려 넘어지지 않도록 콜라이더는 두지 않는다)
     const matMat = new THREE.MeshStandardMaterial({ color: 0x2d4a6b, roughness: 0.95 });
     for (let i = 0; i < 7; i++) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 1.3), matMat);
@@ -547,10 +601,13 @@ const SCHOOL = (function () {
     const stackMat = new THREE.MeshStandardMaterial({ color: 0x4b4034, roughness: 0.9 });
     for (let i = 0; i < 4; i++) {
       const g = new THREE.Mesh(new THREE.BoxGeometry(1.6, rand(0.8, 1.6), 0.9), stackMat);
-      g.position.set(wx(GYM_X[1]) - rand(1, 4), g.geometry.parameters.height / 2, rand(wz(GYM_Y[0]) + 6, wz(GYM_Y[1]) - 6));
+      const sx = wx(GYM_X[1]) - rand(1, 4);
+      const sz = rand(wz(GYM_Y[0]) + 6, wz(GYM_Y[1]) - 6);
+      g.position.set(sx, g.geometry.parameters.height / 2, sz);
       g.rotation.y = rand(-0.3, 0.3);
       g.castShadow = true;
       scene.add(g);
+      addPropCollider(sx, sz, 0.9, 0.55, true);
     }
   }
 
@@ -817,8 +874,18 @@ const SCHOOL = (function () {
     return null;
   }
 
-  /* 원-벽 충돌: 해당 위치에 반지름 r의 원이 벽과 겹치는가 */
-  function circleBlocked(x, z, r) {
+  /*
+    원-벽 충돌 + 소품 충돌.
+
+    props:
+      'all'  - 책상/의자까지 전부 막힘 (플레이어)
+      'tall' - 사물함·기둥처럼 넘어갈 수 없는 것만 (좀비)
+      'none' - 벽만
+
+    좀비에게 책상까지 막으면 교실에서 길이 막혀 끼기 때문에,
+    좀비는 낮은 가구를 타고 넘는 것으로 취급한다.
+  */
+  function circleBlocked(x, z, r, props) {
     const minX = cx(x - r);
     const maxX = cx(x + r);
     const minZ = cz(z - r);
@@ -835,7 +902,33 @@ const SCHOOL = (function () {
         if (dx * dx + dz * dz < r * r) return true;
       }
     }
+
+    const mode = props === undefined ? 'all' : props;
+    if (mode === 'none') return false;
+    const tallOnly = mode === 'tall';
+
+    for (let gy = minZ; gy <= maxZ; gy++) {
+      for (let gx = minX; gx <= maxX; gx++) {
+        if (!inBounds(gx, gy)) continue;
+        const bucket = colliderCells[idx(gx, gy)];
+        if (!bucket) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const c = bucket[i];
+          if (tallOnly && !c.tall) continue;
+          const nx = clamp(x, c.x - c.hw, c.x + c.hw);
+          const nz = clamp(z, c.z - c.hd, c.z + c.hd);
+          const dx = x - nx;
+          const dz = z - nz;
+          if (dx * dx + dz * dz < r * r) return true;
+        }
+      }
+    }
     return false;
+  }
+
+  /* 사람/좀비가 설 수 있는 자리인지 (아이템·좀비 스폰 검사용) */
+  function isSpotFree(x, z, r) {
+    return !circleBlocked(x, z, r === undefined ? 0.5 : r, 'all');
   }
 
   /* 두 점 사이 시야 확보 여부 */
@@ -877,6 +970,12 @@ const SCHOOL = (function () {
     buildWalls(scene);
     buildProps(scene, rng);
     buildLights(scene, rng, quality);
+
+    // 소품이 다 놓인 뒤에 계산해야 한다
+    navBlocked.fill(0);
+    for (const c of navCells) {
+      if (circleBlocked(wx(c[0]), wz(c[1]), 0.45, 'tall')) navBlocked[idx(c[0], c[1])] = 1;
+    }
   }
 
   function randomSpawnCell(playerPos, minDist, flowDist) {
@@ -891,7 +990,21 @@ const SCHOOL = (function () {
       cands.push(c);
     }
     if (!cands.length) return null;
-    return cands[(Math.random() * cands.length) | 0];
+
+    /*
+      칸 중심이 책상 위일 수 있으므로, 칸 안에서 실제로 설 수 있는 지점을 찾는다.
+      몇 번 시도해서 실패하면 그 칸은 포기하고 다른 칸을 고른다.
+    */
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const c = cands[(Math.random() * cands.length) | 0];
+      for (let k = 0; k < 6; k++) {
+        const px = wx(c[0]) + (k === 0 ? 0 : (Math.random() * 2 - 1) * (TILE / 2 - 0.7));
+        const pz = wz(c[1]) + (k === 0 ? 0 : (Math.random() * 2 - 1) * (TILE / 2 - 0.7));
+        if (isSpotFree(px, pz, 0.55)) return { cell: c, x: px, z: pz };
+      }
+    }
+    const fallback = cands[(Math.random() * cands.length) | 0];
+    return { cell: fallback, x: wx(fallback[0]), z: wz(fallback[1]) };
   }
 
   return {
@@ -904,6 +1017,7 @@ const SCHOOL = (function () {
     zone,
     rooms,
     navCells,
+    navBlocked,
     idx,
     isSolid,
     isWalkable,
@@ -915,6 +1029,7 @@ const SCHOOL = (function () {
     update,
     raycast,
     circleBlocked,
+    isSpotFree,
     hasLineOfSight,
     randomSpawnCell,
     get spawnPoint() {

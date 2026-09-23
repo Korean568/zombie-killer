@@ -200,6 +200,9 @@ class Zombie {
     this.dead = true;
     this.state = 'dead';
     this.deathTimer = 0;
+    this.sinkAfter = 7; // 시체가 너무 쌓이면 게임 쪽에서 앞당긴다
+    // 시체는 더 이상 움직이지 않으므로 그림자 패스에서 뺀다
+    this.bodyMesh.castShadow = false;
     this.fallDir = Math.random() < 0.5 ? 1 : -1;
     this.fallSpin = rand(-0.5, 0.5);
   }
@@ -216,14 +219,20 @@ class Zombie {
 
     if (this.dead) {
       this.deathTimer += dt;
-      const t = clamp(this.deathTimer / 0.55, 0, 1);
-      const e = 1 - Math.pow(1 - t, 3);
-      this.bodyRoot.rotation.x = e * (Math.PI / 2) * this.fallDir;
-      this.bodyRoot.rotation.z = e * this.fallSpin;
-      this.bodyRoot.position.y = -e * 0.15;
-      this.eyeMaterial.color.lerp(DEAD_EYE_COLOR, dt * 3);
-      if (this.deathTimer > 7) {
-        this.group.position.y -= dt * 0.6;
+
+      // 쓰러지는 연출(0.55초) 동안만 자세를 갱신한다
+      if (this.deathTimer <= 0.6) {
+        const t = clamp(this.deathTimer / 0.55, 0, 1);
+        const e = 1 - Math.pow(1 - t, 3);
+        this.bodyRoot.rotation.x = e * (Math.PI / 2) * this.fallDir;
+        this.bodyRoot.rotation.z = e * this.fallSpin;
+        this.bodyRoot.position.y = -e * 0.15;
+        this.eyeMaterial.color.lerp(DEAD_EYE_COLOR, dt * 3);
+      }
+
+      // 가라앉기 시작하기 전까지는 아무 일도 하지 않는다
+      if (this.deathTimer > this.sinkAfter) {
+        this.group.position.y -= dt * 0.9;
         if (this.group.position.y < -2.2) this.removeMe = true;
       }
       return;
@@ -332,13 +341,13 @@ class Zombie {
     const nx = this.pos.x + dirX * step;
     const nz = this.pos.z + dirZ * step;
 
-    if (!SCHOOL.circleBlocked(nx, this.pos.z, this.radius)) this.pos.x = nx;
+    if (!SCHOOL.circleBlocked(nx, this.pos.z, this.radius, 'tall')) this.pos.x = nx;
     else {
       // 벽을 따라 미끄러지기
       const slide = this.pos.z + (dirZ >= 0 ? step : -step) * 0.6;
-      if (!SCHOOL.circleBlocked(this.pos.x, slide, this.radius)) this.pos.z = slide;
+      if (!SCHOOL.circleBlocked(this.pos.x, slide, this.radius, 'tall')) this.pos.z = slide;
     }
-    if (!SCHOOL.circleBlocked(this.pos.x, nz, this.radius)) this.pos.z = nz;
+    if (!SCHOOL.circleBlocked(this.pos.x, nz, this.radius, 'tall')) this.pos.z = nz;
 
     this.group.position.set(this.pos.x, this.group.position.y, this.pos.z);
     this._faceTowards(dirX, dirZ, dt, 6);
@@ -424,6 +433,7 @@ function bfs(dist, sx, sy, W, H) {
       if (i < 2 && Math.abs((n % W) - cxx) !== 1) continue;
       if (dist[n] !== -1) continue;
       if (SCHOOL.grid[n] === 1) continue;
+      if (SCHOOL.navBlocked[n]) continue; // 기둥·의자 더미가 칸 중심을 막은 곳
       dist[n] = d + 1;
       queue[tail++] = n;
     }
@@ -451,6 +461,7 @@ function flowDirection(flow, x, z) {
       const nx = gx + dx;
       const ny = gy + dy;
       if (!SCHOOL.isWalkable(nx, ny)) continue;
+      if (SCHOOL.navBlocked[ny * W + nx]) continue;
       // 대각선은 양 옆이 뚫려 있을 때만
       if (dx && dy && (!SCHOOL.isWalkable(gx + dx, gy) || !SCHOOL.isWalkable(gx, gy + dy))) continue;
       const d = flow[ny * W + nx];

@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 10; // 로드된 번들 확인용
+window.GAME_BUILD = 12; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -93,7 +93,12 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     flashlightOn: true,
   };
 
-  const SPEED = { walk: 4.6, sprint: 7.4, crouch: 2.3, air: 0.35 };
+  /*
+  #6 대응: 질주 7.4 는 가장 빠른 좀비보다 확실히 빨라서
+  넓은 곳에서 원만 그려도 안 잡혔다. 속도를 낮추고 스태미나를 빡빡하게 해
+  '치고 빠지기'는 되지만 '계속 도망'은 안 되게 만든다.
+*/
+const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   /* ---------------- 입력 ---------------- */
   const keys = Object.create(null);
@@ -808,11 +813,11 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
 
   function spawnWavePickups(n) {
     for (let i = 0; i < n; i++) {
-      const c = SCHOOL.randomSpawnCell(player.pos, 8, flowField);
-      if (!c) continue;
+      const spot = SCHOOL.randomSpawnCell(player.pos, 8, flowField);
+      if (!spot) continue;
       // 1웨이브에는 권총(무한 탄약)뿐이라 탄약 상자가 쓸모없다
       const type = wave <= 1 ? 'health' : Math.random() < 0.42 ? 'health' : 'ammo';
-      spawnPickup(type, SCHOOL.wx(c[0]) + rand(-1, 1), SCHOOL.wz(c[1]) + rand(-1, 1));
+      spawnPickup(type, spot.x, spot.z);
     }
   }
 
@@ -872,11 +877,14 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
      ========================================================= */
   function waveComposition(n) {
     const d = DIFF[settings.difficulty];
-    const total = Math.max(4, Math.round((5 + n * 2.4) * d.count));
+    // 마릿수는 완만하게 포화시키고(웨이브가 끝없이 길어지지 않도록)
+    const raw = 5 + n * 2.4;
+    const total = Math.max(4, Math.round(Math.min(raw, 34 + n * 0.5) * d.count));
     const list = [];
-    const runnerChance = clamp((n - 1) * 0.055, 0, 0.45);
+    // 대신 후반에는 구성이 험해진다: 러너 비율 상한을 0.45 -> 0.75 로
+    const runnerChance = clamp((n - 1) * 0.055, 0, n > 12 ? 0.75 : 0.45);
     let brutes = n >= 4 ? Math.floor((n - 1) / 3) : 0;
-    brutes = Math.min(brutes, 6);
+    brutes = Math.min(brutes, 6 + Math.floor(Math.max(0, n - 12) / 2));
     for (let i = 0; i < total; i++) {
       if (brutes > 0 && i > 0 && i % Math.max(3, Math.floor(total / (brutes + 1))) === 0) {
         list.push('brute');
@@ -895,8 +903,13 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     waveState = 'active';
     spawnQueue = waveComposition(wave);
     spawnTimer = 0.4;
-    spawnInterval = Math.max(0.35, 1.25 - wave * 0.05);
-    maxAlive = Math.min(34, 14 + wave * 2);
+    /*
+      #7 대응: 동시 등장 수와 등장 간격이 상한에 걸리면
+      그 뒤로는 '어려워지는' 게 아니라 웨이브가 '길어지기만' 했다.
+      상한을 올리고, 상한에 닿은 뒤에는 구성(러너·거대 좀비 비율)으로 난이도를 올린다.
+    */
+    spawnInterval = Math.max(0.22, 1.25 - wave * 0.05);
+    maxAlive = Math.min(46, 14 + wave * 2 + Math.max(0, wave - 10));
 
     announce('WAVE ' + wave, spawnQueue.length + '마리가 몰려온다');
     SFX.alarm();
@@ -920,7 +933,9 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     SFX.waveClear();
     announce('WAVE ' + wave + ' 격퇴', '다음 웨이브까지 ' + Math.round(prepTimer) + '초');
     // 보너스 회복
-    const heal = settings.difficulty === 'hard' ? 10 : 18;
+    // 후반으로 갈수록 회복량을 줄여 누적 체력 우위를 막는다
+    const base = settings.difficulty === 'hard' ? 10 : 18;
+    const heal = Math.max(4, Math.round(base - wave * 0.8));
     if (player.hp < player.maxHp) {
       player.hp = Math.min(player.maxHp, player.hp + heal);
       toast('잠시 숨을 돌린다 +' + heal + ' 체력');
@@ -942,13 +957,13 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     spawnTimer = spawnInterval * rand(0.6, 1.3);
 
     const type = spawnQueue.shift();
-    const cell = SCHOOL.randomSpawnCell(player.pos, 26, flowField);
-    if (!cell) {
+    const spot = SCHOOL.randomSpawnCell(player.pos, 26, flowField);
+    if (!spot) {
       spawnQueue.unshift(type);
       return;
     }
     const d = DIFF[settings.difficulty];
-    const z = new Zombie(type, { x: SCHOOL.wx(cell[0]) + rand(-1, 1), z: SCHOOL.wz(cell[1]) + rand(-1, 1) }, {
+    const z = new Zombie(type, { x: spot.x, z: spot.z }, {
       hp: d.hp * (1 + (wave - 1) * 0.07),
       speed: d.speed * (1 + (wave - 1) * 0.015),
       dmg: d.dmg * (1 + (wave - 1) * 0.03),
@@ -957,11 +972,28 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     zombies.push(z);
   }
 
+  /*
+    #15 대응: 시체는 좀비 1구당 메시 6개다.
+    많이 쌓이면 렌더 부담이 되므로 동시에 남는 수를 제한하고
+    오래된 것부터 가라앉는 시점을 앞당긴다.
+  */
+  const MAX_CORPSES = 10;
+  function limitCorpses() {
+    const corpses = [];
+    for (let i = 0; i < zombies.length; i++) {
+      if (zombies[i].dead && zombies[i].group.position.y > -0.1) corpses.push(zombies[i]);
+    }
+    if (corpses.length <= MAX_CORPSES) return;
+    corpses.sort((a, b) => b.deathTimer - a.deathTimer); // 오래된 것 먼저
+    for (let i = MAX_CORPSES; i < corpses.length; i++) corpses[i].sinkAfter = 0;
+  }
+
   function onZombieKilled(z, head, point) {
     stats.kills++;
+    limitCorpses();
     SFX.zombieDeath(z.pos.distanceTo(player.pos));
     bloodBurst(point, { x: 0, y: 1, z: 0 }, 14);
-    if (Math.random() < 0.075) {
+    if (Math.random() < 0.075 && SCHOOL.isSpotFree(z.pos.x, z.pos.z, 0.5)) {
       spawnPickup(Math.random() < 0.45 ? 'health' : 'ammo', z.pos.x, z.pos.z);
     }
     updateHud();
@@ -1056,9 +1088,9 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     const wantSprint = !!keys['ShiftLeft'] && moving && fwd > 0 && !player.crouching;
     const sprinting = wantSprint && player.stamina > 1;
     if (sprinting) {
-      player.stamina = Math.max(0, player.stamina - 26 * dt);
+      player.stamina = Math.max(0, player.stamina - 32 * dt);
     } else {
-      player.stamina = Math.min(player.maxStamina, player.stamina + (moving ? 12 : 20) * dt);
+      player.stamina = Math.min(player.maxStamina, player.stamina + (moving ? 8 : 17) * dt);
     }
 
     const targetSpeed = player.crouching
@@ -1093,9 +1125,9 @@ window.GAME_BUILD = 10; // 로드된 번들 확인용
     // 수평 이동 + 충돌
     const nx = player.pos.x + player.vel.x * dt;
     const nz = player.pos.z + player.vel.z * dt;
-    if (!SCHOOL.circleBlocked(nx, player.pos.z, player.radius)) player.pos.x = nx;
+    if (!SCHOOL.circleBlocked(nx, player.pos.z, player.radius, 'all')) player.pos.x = nx;
     else player.vel.x *= 0.2;
-    if (!SCHOOL.circleBlocked(player.pos.x, nz, player.radius)) player.pos.z = nz;
+    if (!SCHOOL.circleBlocked(player.pos.x, nz, player.radius, 'all')) player.pos.z = nz;
     else player.vel.z *= 0.2;
 
     // 발소리 + 헤드밥
