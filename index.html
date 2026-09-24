@@ -271,6 +271,26 @@
   .opt small{display:block;font-size:10px;font-weight:400;opacity:.7;margin-top:2px;letter-spacing:0;}
 
   .slider-row{display:flex;align-items:center;gap:12px;justify-content:center;}
+  .net-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+  .net-row input{
+    pointer-events:auto;width:230px;padding:8px 11px;font-size:13px;font-family:inherit;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.18);
+    color:#e4e0d2;outline:none;
+  }
+  .net-row input:focus{border-color:rgba(228,193,74,.6);}
+  .net-row input::placeholder{color:#6c7166;}
+  .net-note{width:100%;margin-top:7px;font-size:10.5px;color:#6f7368;letter-spacing:.04em;}
+  .net-note.on{color:var(--accent);}
+  .net-note.warn{color:#c98a2a;}
+
+  #net-badge{
+    position:fixed;right:28px;top:calc(22px + 92px);font-size:10px;letter-spacing:.16em;
+    color:var(--muted);text-align:right;
+  }
+  #net-badge.online{color:var(--accent);}
+  #net-badge.offline{color:#7d6a3a;}
+  body.touch-mode #net-badge{display:none;}
+
   .slider-row input{width:220px;accent-color:var(--red);cursor:pointer;}
   .slider-row span{font-size:13px;color:#b9b5a6;min-width:46px;text-align:left;}
 
@@ -515,6 +535,7 @@
     <div class="sb-title">매치 순위 <em id="sb-count">0</em>명</div>
     <div id="sb-rows"></div>
   </div>
+  <div id="net-badge">오프라인</div>
   <div id="search-prompt" hidden><b>E</b> 사물함 수색</div>
   <div id="compass">F 손전등 · R 재장전 · E 수색 · 1 2 3 무기 · B 상점</div>
 </div>
@@ -563,6 +584,13 @@
       <button class="opt" data-quality="low">낮음</button>
       <button class="opt sel" data-quality="medium">보통</button>
       <button class="opt" data-quality="high">높음<small>그림자</small></button>
+    </div>
+    <div class="row">
+      <div class="row-title">멀티플레이</div>
+      <div class="net-row">
+        <input type="text" id="roomcode" maxlength="12" placeholder="방 코드 (비우면 main)" autocomplete="off">
+      </div>
+      <div class="net-note" id="net-note">같은 방 코드를 넣으면 친구와 같은 매치에 들어갑니다 · 이름은 접속할 때 자동으로 정해집니다</div>
     </div>
     <div class="row">
       <div class="row-title">매치 인원</div>
@@ -659,6 +687,7 @@
 <script src="js/weapons.js"></script>
 <script src="js/ally.js"></script>
 <script src="js/bot.js"></script>
+<script src="js/net.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/game.js"></script>
 </body>

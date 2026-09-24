@@ -2,7 +2,14 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 32; // 로드된 번들 확인용
+window.GAME_BUILD = 34; // 로드된 번들 확인용
+
+/*
+  멀티플레이 서버 주소.
+  server/ 를 배포한 뒤 여기에 wss:// 주소를 넣으면 진짜 대전이 된다.
+  비워 두면 전부 봇으로 진행한다. (?server=wss://... 로도 덮어쓸 수 있다)
+*/
+const MATCH_SERVER_URL = '';
 
 (function () {
   'use strict';
@@ -1339,6 +1346,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       placed++;
     }
 
+    SCHOOL.openRoomDoors(r.id); // 문이 활짝 열린다
     SFX.alarm();
     announce(roomLabel(r), placed + '마리가 깨어났다');
     updateHud();
@@ -1434,6 +1442,24 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
     nearLocker = null;
     $('#search-prompt').hidden = true;
+  }
+
+  /*
+    시체는 좀비 1구당 메시 6개다. 너무 쌓이면 렌더 부담이 되므로
+    동시에 남는 수를 제한하고 오래된 것부터 가라앉는 시점을 앞당긴다.
+  */
+  /* 좀비 종류별 킬 포인트 */
+  const KILL_VALUE = { walker: 1, runner: 2, brute: 5 };
+
+  const MAX_CORPSES = 10;
+  function limitCorpses() {
+    const corpses = [];
+    for (let i = 0; i < zombies.length; i++) {
+      if (zombies[i].dead && zombies[i].group.position.y > -0.1) corpses.push(zombies[i]);
+    }
+    if (corpses.length <= MAX_CORPSES) return;
+    corpses.sort(function (a, b) { return b.deathTimer - a.deathTimer; });
+    for (let i = MAX_CORPSES; i < corpses.length; i++) corpses[i].sinkAfter = 0;
   }
 
   function onZombieKilled(z, head, point) {
@@ -2281,6 +2307,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       // 방에 들어서면 그 방 좀비가 깨어난다
       checkRoomEntry();
       updateLockerPrompt();
+      SCHOOL.updateDoors(dt);
 
       updateAllies(dt);
       updateBots(dt);
@@ -2375,6 +2402,18 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     setupWeapons();
     resetPlayer();
     flowField = computeFlowField(player.pos.x, player.pos.z);
+
+    /*
+      멀티플레이 서버 주소.
+      ?server=wss://... 로 덮어쓸 수 있어 배포 전에도 시험해 볼 수 있다.
+    */
+    const qs = new URLSearchParams(location.search);
+    NET.configure(qs.get('server') || MATCH_SERVER_URL);
+    const note = $('#net-note');
+    if (!NET.configured) {
+      note.textContent = '서버가 아직 연결되지 않아 전부 봇으로 진행합니다';
+      note.className = 'net-note warn';
+    }
 
     bindInput();
     // 나중에 터치로 켜지면 플레이 중일 때 바로 UI를 띄운다

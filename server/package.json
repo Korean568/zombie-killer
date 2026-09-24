@@ -1,0 +1,8 @@
+{
+  "name": "zombie-killer-match",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  }
+}

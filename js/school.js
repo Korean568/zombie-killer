@@ -23,6 +23,7 @@ const SCHOOL = (function () {
   const fixtures = []; // 형광등 {x,z,y,alive,phase,rate,base,on}
   const navCells = [];
   const lockerSpots = []; // 사물함 위치 (아이템 수색용)
+  const doors = [];       // 교실 문 {pivot, roomId, open, angle, target}
 
   /*
     소품 충돌.
@@ -661,6 +662,98 @@ const SCHOOL = (function () {
     }
   }
 
+  /* ---------------- 교실 문 ---------------- */
+  /*
+    출입구는 격자 2칸(8m)이라 양쪽으로 열리는 여닫이문 두 짝을 단다.
+    각 짝은 바깥쪽 모서리에 경첩(pivot)이 있고 그 축으로 회전한다.
+  */
+  function buildDoors(scene) {
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0x6b5533, roughness: 0.88 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x3a3229, roughness: 0.9 });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x8fa6ae, roughness: 0.35, metalness: 0.1,
+      transparent: true, opacity: 0.35,
+    });
+    const knobMat = new THREE.MeshStandardMaterial({ color: 0xb9a15c, roughness: 0.4, metalness: 0.7 });
+
+    const W = TILE - 0.12;   // 문짝 폭
+    const H = 3.1;           // 문 높이
+
+    function panel(hingeX, hingeZ, axis, dir, roomId) {
+      const pivot = new THREE.Group();
+      pivot.position.set(hingeX, 0, hingeZ);
+      // axis 'x' = 문이 X축을 따라 놓임(남북 벽), 'z' = Z축을 따라 놓임(동서 벽)
+      const axisZ = axis === 'z';
+      if (axisZ) pivot.rotation.y = Math.PI / 2;
+
+      const g = new THREE.Group();
+      g.position.x = (W / 2) * dir;
+      pivot.add(g);
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.1), panelMat);
+      body.position.y = H / 2;
+      body.castShadow = true;
+      g.add(body);
+
+      // 위쪽 유리창
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(W * 0.6, 0.95, 0.12), glassMat);
+      glass.position.set(0, H * 0.72, 0);
+      g.add(glass);
+
+      // 창틀
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(W * 0.64, 0.07, 0.14), frameMat);
+      bar.position.set(0, H * 0.72, 0);
+      g.add(bar);
+
+      // 손잡이 (경첩 반대쪽)
+      const knob = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.26), knobMat);
+      knob.position.set(-(W / 2 - 0.22) * dir, 1.05, 0);
+      g.add(knob);
+
+      scene.add(pivot);
+      doors.push({ pivot: pivot, roomId: roomId, angle: 0, target: 0, dir: dir, axisZ: axisZ });
+    }
+
+    // 교실: 위쪽 벽(y=6) / 아래쪽 벽(y=9)
+    ROOM_X.forEach(function (rx, i) {
+      const dx = rx[0] + 3;
+      const xL = wx(dx) - TILE / 2;
+      const xR = wx(dx + 1) + TILE / 2;
+      // 위쪽 교실 문
+      panel(xL, wz(6), 'x', 1, i + 1);
+      panel(xR, wz(6), 'x', -1, i + 1);
+      // 아래쪽 교실 문
+      panel(xL, wz(9), 'x', 1, i + 5);
+      panel(xR, wz(9), 'x', -1, i + 5);
+    });
+
+    // 체육관: 세로 벽(x=32) 두 곳
+    [[7, 8], [12, 13]].forEach(function (pair) {
+      const zT = wz(pair[0]) - TILE / 2;
+      const zB = wz(pair[1]) + TILE / 2;
+      panel(wx(32), zT, 'z', -1, 9);
+      panel(wx(32), zB, 'z', 1, 9);
+    });
+  }
+
+  /* 해당 방의 문을 연다 */
+  function openRoomDoors(roomId) {
+    for (let i = 0; i < doors.length; i++) {
+      if (doors[i].roomId === roomId) {
+        doors[i].target = (Math.PI * 0.62) * -doors[i].dir;
+      }
+    }
+  }
+
+  function updateDoors(dt) {
+    for (let i = 0; i < doors.length; i++) {
+      const d = doors[i];
+      if (Math.abs(d.angle - d.target) < 0.002) continue;
+      d.angle += (d.target - d.angle) * clamp(3.2 * dt, 0, 1);
+      d.pivot.rotation.y = (d.axisZ ? Math.PI / 2 : 0) + d.angle;
+    }
+  }
+
   /* ---------------- 조명 ---------------- */
 
   function buildLights(scene, rng, quality) {
@@ -953,6 +1046,7 @@ const SCHOOL = (function () {
     fixtures.length = 0;
     navCells.length = 0;
     lockerSpots.length = 0;
+    doors.length = 0;
     lightPool = [];
     const rng = mulberry32(20090212);
     srng = rng; // 이 시점부터 모듈 내 rand/randInt 도 시드를 따른다
@@ -974,6 +1068,7 @@ const SCHOOL = (function () {
     buildWalls(scene);
     buildProps(scene, rng);
     buildLights(scene, rng, quality);
+    buildDoors(scene);
 
     // 소품이 다 놓인 뒤에 계산해야 한다
     navBlocked.fill(0);
@@ -1037,6 +1132,8 @@ const SCHOOL = (function () {
     raycast,
     circleBlocked,
     isSpotFree,
+    openRoomDoors,
+    updateDoors,
     hasLineOfSight,
     randomSpawnCell,
     get spawnPoint() {
