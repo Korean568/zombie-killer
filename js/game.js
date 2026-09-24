@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 24; // 로드된 번들 확인용
+window.GAME_BUILD = 30; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -40,6 +40,11 @@ window.GAME_BUILD = 24; // 로드된 번들 확인용
       t: $('#ch-t'), b: $('#ch-b'), l: $('#ch-l'), r: $('#ch-r'),
     },
     points: $('#points').querySelector('b'),
+    sbCount: $('#sb-count'),
+    sbRows: $('#sb-rows'),
+    shieldWrap: $('#shield-wrap'),
+    shieldFill: $('#shield-fill'),
+    shieldText: $('#shield-text'),
     squad: $('#squad'),
     shop: $('#shop'),
     shopPoints: $('#shop-points'),
@@ -51,6 +56,7 @@ window.GAME_BUILD = 24; // 로드된 번들 확인용
   /* ---------------- 설정 ---------------- */
   const settings = {
     difficulty: 'normal',
+    players: 20,
     quality: 'medium',
     sensitivity: 1.0,
     volume: 0.7,
@@ -93,6 +99,8 @@ window.GAME_BUILD = 24; // 로드된 번들 확인용
     bobAmt: 0,
     stepDist: 0,
     invuln: 0,
+    shield: 0,      // 마법 힐팩이 주는 보조 체력
+    shieldHits: 0,  // 5번 맞을 때마다 보조 체력 1 감소
     shakeT: 0,
     shakeAmt: 0,
     recoilPitch: 0,
@@ -105,6 +113,7 @@ window.GAME_BUILD = 24; // 로드된 번들 확인용
   넓은 곳에서 원만 그려도 안 잡혔다. 속도를 낮추고 스태미나를 빡빡하게 해
   '치고 빠지기'는 되지만 '계속 도망'은 안 되게 만든다.
 */
+const PLAYER_MAX_SHIELD = 20; // 마법 힐팩이 주는 보조 체력 최대치
 const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   /* ---------------- 입력 ---------------- */
@@ -137,22 +146,33 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   let muzzleMesh = null;
   let muzzleTimer = 0;
 
-  const UNLOCK_WAVE = { pistol: 1, shotgun: 2, rifle: 4 };
 
   /* ---------------- 좀비 / 웨이브 ---------------- */
   let zombies = [];
   let flowField = null;
   let flowTimer = 0;
-  let wave = 0;
-  let waveState = 'prep';
-  let prepTimer = 0;
-  let spawnQueue = [];
-  let spawnTimer = 0;
-  let spawnInterval = 1.2;
-  let maxAlive = 26;
+  let clearedRooms = 0;
+
 
   /* ---------------- 아이템 ---------------- */
   let pickups = [];
+
+  /* ---------------- 방 단위 좀비 / 사물함 ---------------- */
+  let roomStates = [];     // 각 방: {room, count, triggered, cleared}
+  let lockers = [];        // {x,z,ry, searched, loot}
+  let nearLocker = null;
+  let victory = false;
+
+  /* ---------------- 매치(봇) ---------------- */
+  /*
+    정적 호스팅이라 실제 네트워크 대전은 불가능하다.
+    명단은 10~100명을 채우되, 3D 로 실제 움직이는 봇은 성능 때문에
+    MAX_LIVE_BOTS 명까지만 만들고 나머지는 점수판에만 존재한다.
+  */
+  const MAX_LIVE_BOTS = 8;
+  let bots = [];
+  let roster = [];
+  let rosterTimer = 0;
 
   /* ---------------- 부하 ---------------- */
   let allies = [];
@@ -190,7 +210,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     TEX.setRenderer(renderer);
 
     // 기본 환경광 — 폐교는 어두워야 하므로 최소한만
-    scene.add(new THREE.AmbientLight(0x0c1420, 0.2));
+    scene.add(new THREE.AmbientLight(0x0c1420, 0.28));
     const hemi = new THREE.HemisphereLight(0x1b2836, 0x070806, 0.16);
     scene.add(hemi);
     const moon = new THREE.DirectionalLight(0x4a668f, 0.1);
@@ -198,7 +218,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     scene.add(moon);
 
     // 손전등
-    flashlight = new THREE.SpotLight(0xfff0d2, 2.9, 62, 0.44, 0.48, 1.0);
+    flashlight = new THREE.SpotLight(0xfff0d2, 2.0, 62, 0.44, 0.48, 1.0);
     /*
       광원을 카메라 원점에 두면 원뿔 가장자리(약 27도)에 뷰모델이 걸려
       총이 새하얗게 타버린다. 총(z=-0.52~-0.58)보다 앞에 두어 아예 제외한다.
@@ -526,7 +546,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
      무기
      ========================================================= */
   function setupWeapons() {
-    weapons = WEAPON_DEFS.map((d) => new WeaponState(d, d.id === 'pistol'));
+    // 웨이브 해금이 없어졌으므로 무기는 처음부터 전부 쓸 수 있다
+    weapons = WEAPON_DEFS.map((d) => new WeaponState(d, true));
     curWeapon = 0;
     equip(0, true);
     renderSlots();
@@ -782,14 +803,14 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         color: g.color,
         roughness: 0.7,
         metalness: 0.15,
-        emissive: type === 'health' ? 0x300804 : 0x1d2208,
+        emissive: type === 'magic' ? 0x4a3a00 : type === 'health' ? 0x300804 : 0x1d2208,
       }),
     }));
     pickupAssets[type] = {
       groups,
       beamGeo: new THREE.CylinderGeometry(0.22, 0.22, 3.4, 8, 1, true),
       beamMat: new THREE.MeshBasicMaterial({
-        color: type === 'health' ? 0xff4436 : 0xc9e24a,
+        color: type === 'magic' ? 0xffd84a : type === 'health' ? 0xff4436 : 0xc9e24a,
         transparent: true,
         opacity: 0.1,
         side: THREE.DoubleSide,
@@ -803,7 +824,14 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   function buildPickupParts(type) {
     const parts = [];
-    if (type === 'health') {
+    if (type === 'magic') {
+      // 마법 힐팩 — 금빛 상자에 십자
+      parts.push({ geo: new THREE.BoxGeometry(0.4, 0.3, 0.3), matrix: MAT(0, 0, 0), color: 0x4a3d12 });
+      parts.push({ geo: new THREE.BoxGeometry(0.42, 0.06, 0.32), matrix: MAT(0, 0.1, 0), color: 0xffd84a });
+      parts.push({ geo: new THREE.BoxGeometry(0.42, 0.06, 0.32), matrix: MAT(0, -0.1, 0), color: 0xffd84a });
+      parts.push({ geo: new THREE.BoxGeometry(0.2, 0.08, 0.33), matrix: MAT(0, 0, 0), color: 0xffe98a });
+      parts.push({ geo: new THREE.BoxGeometry(0.08, 0.22, 0.33), matrix: MAT(0, 0, 0), color: 0xffe98a });
+    } else if (type === 'health') {
       parts.push({ geo: new THREE.BoxGeometry(0.42, 0.3, 0.3), matrix: MAT(0, 0, 0), color: 0xe8e4d8 });
       parts.push({ geo: new THREE.BoxGeometry(0.2, 0.07, 0.32), matrix: MAT(0, 0.05, 0), color: 0xcc2418 });
       parts.push({ geo: new THREE.BoxGeometry(0.07, 0.2, 0.32), matrix: MAT(0, 0.05, 0), color: 0xcc2418 });
@@ -848,13 +876,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     });
   }
 
-  function spawnWavePickups(n) {
+  /* 게임 시작 시 학교 곳곳에 보급품을 흩뿌린다 */
+  function scatterPickups(n) {
     for (let i = 0; i < n; i++) {
-      const spot = SCHOOL.randomSpawnCell(player.pos, 8, flowField);
+      const spot = SCHOOL.randomSpawnCell(player.pos, 10, flowField);
       if (!spot) continue;
-      // 1웨이브에는 권총(무한 탄약)뿐이라 탄약 상자가 쓸모없다
-      const type = wave <= 1 ? 'health' : Math.random() < 0.42 ? 'health' : 'ammo';
-      spawnPickup(type, spot.x, spot.z);
+      spawnPickup(Math.random() < 0.45 ? 'health' : 'ammo', spot.x, spot.z);
     }
   }
 
@@ -869,7 +896,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       const dz = p.group.position.z - player.pos.z;
       if (dx * dx + dz * dz < 2.4) {
         let used = false;
-        if (p.type === 'health') {
+        if (p.type === 'magic') {
+          player.shield = PLAYER_MAX_SHIELD;
+          player.shieldHits = 0;
+          SFX.magicHeal();
+          toast('마법 힐팩 — 보조 체력 ' + PLAYER_MAX_SHIELD, true);
+          used = true;
+        } else if (p.type === 'health') {
           if (player.hp < player.maxHp) {
             player.hp = Math.min(player.maxHp, player.hp + 35);
             toast('구급상자 +35 체력');
@@ -895,7 +928,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
           }
         }
         if (used) {
-          SFX.pickup(p.type);
+          if (p.type !== 'magic') SFX.pickup(p.type);
           scene.remove(p.group);
           pickups.splice(i, 1);
           updateAmmoHud();
@@ -1003,6 +1036,92 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SFX.waveClear();
     toast(a.spec.name + ' 승급');
     return true;
+  }
+
+  /* =========================================================
+     매치 / 점수판
+     ========================================================= */
+  function setupMatch() {
+    clearBots();
+    roster = [{ name: '나', kills: 0, me: true, bot: null }];
+
+    const total = settings.players;
+    for (let i = 0; i < total - 1; i++) {
+      roster.push({ name: botName(i), kills: 0, me: false, bot: null });
+    }
+
+    // 앞쪽 몇 명만 실제 3D 봇으로 내보낸다
+    const live = Math.min(MAX_LIVE_BOTS, total - 1);
+    for (let i = 0; i < live; i++) {
+      const spot = SCHOOL.randomSpawnCell(player.pos, 6, flowField);
+      if (!spot) continue;
+      const b = new Bot({ x: spot.x, z: spot.z }, randInt(0, 3), roster[i + 1].name);
+      b.addTo(scene);
+      bots.push(b);
+      roster[i + 1].bot = b;
+    }
+    renderScoreboard();
+  }
+
+  function clearBots() {
+    bots.forEach(function (b) { b.removeFrom(scene); });
+    bots = [];
+  }
+
+  function updateBots(dt) {
+    const ctx = {
+      playerPos: player.pos,
+      zombies: zombies,
+      bots: bots,
+      tracer: spawnTracer,
+      onBotHit: function (z, point, killed, head) {
+        bloodBurst(point, { x: 0, y: 1, z: 0 }, head ? 10 : 6);
+        SFX.flesh(0.45);
+        if (killed) onZombieKilled(z, head, point);
+      },
+    };
+    for (let i = bots.length - 1; i >= 0; i--) {
+      const b = bots[i];
+      b.update(dt, ctx);
+      if (b.removeMe) {
+        b.removeFrom(scene);
+        bots.splice(i, 1);
+      }
+    }
+
+    /* 명단에 없는(화면 밖) 참가자들의 점수를 천천히 굴린다 */
+    rosterTimer -= dt;
+    if (rosterTimer <= 0) {
+      rosterTimer = 2.5;
+      for (let i = 1; i < roster.length; i++) {
+        const r = roster[i];
+        if (r.bot) r.kills = r.bot.kills;
+        else if (Math.random() < 0.28) r.kills++;
+      }
+      roster[0].kills = stats.kills;
+      renderScoreboard();
+    }
+  }
+
+  function renderScoreboard() {
+    if (!roster.length) return;
+    el.sbCount.textContent = roster.length;
+    const sorted = roster.slice().sort(function (a, b) { return b.kills - a.kills; });
+    const myRank = sorted.findIndex(function (r) { return r.me; });
+
+    // 상위 4명 + 내가 그 밖이면 내 줄도 붙인다
+    const show = sorted.slice(0, 4);
+    if (myRank >= 4) show.push(sorted[myRank]);
+
+    el.sbRows.innerHTML = show
+      .map(function (r) {
+        const rank = sorted.indexOf(r) + 1;
+        return (
+          '<div class="sb-row' + (r.me ? ' me' : '') + '">' +
+          '<i>' + rank + '</i><span>' + r.name + '</span><b>' + r.kills + '</b></div>'
+        );
+      })
+      .join('');
   }
 
   function clearAllies() {
@@ -1152,121 +1271,165 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   /* =========================================================
      웨이브
      ========================================================= */
-  function waveComposition(n) {
+  /* =========================================================
+     방 단위 진행
+     웨이브로 몰려오는 대신, 학교 각 방에 좀비가 미리 들어 있다.
+     플레이어가 그 방에 들어서면(= 문을 열면) 그 방 좀비들이 깨어난다.
+     ========================================================= */
+
+  function roomZombieCount(room) {
     const d = DIFF[settings.difficulty];
-    // 마릿수는 완만하게 포화시키고(웨이브가 끝없이 길어지지 않도록)
-    const raw = 5 + n * 2.4;
-    const total = Math.max(4, Math.round(Math.min(raw, 34 + n * 0.5) * d.count));
-    const list = [];
-    // 대신 후반에는 구성이 험해진다: 러너 비율 상한을 0.45 -> 0.75 로
-    const runnerChance = clamp((n - 1) * 0.055, 0, n > 12 ? 0.75 : 0.45);
-    let brutes = n >= 4 ? Math.floor((n - 1) / 3) : 0;
-    brutes = Math.min(brutes, 6 + Math.floor(Math.max(0, n - 12) / 2));
-    for (let i = 0; i < total; i++) {
-      if (brutes > 0 && i > 0 && i % Math.max(3, Math.floor(total / (brutes + 1))) === 0) {
-        list.push('brute');
-        brutes--;
-      } else if (Math.random() < runnerChance) {
-        list.push('runner');
-      } else {
-        list.push('walker');
-      }
-    }
-    return list;
+    if (room.type === 'gym') return Math.round(rand(20, 26) * d.count);
+    return Math.round(rand(4, 7) * d.count);
   }
 
-  function startWave() {
-    wave++;
-    waveState = 'active';
-    spawnQueue = waveComposition(wave);
-    spawnTimer = 0.4;
-    /*
-      #7 대응: 동시 등장 수와 등장 간격이 상한에 걸리면
-      그 뒤로는 '어려워지는' 게 아니라 웨이브가 '길어지기만' 했다.
-      상한을 올리고, 상한에 닿은 뒤에는 구성(러너·거대 좀비 비율)으로 난이도를 올린다.
-    */
-    spawnInterval = Math.max(0.22, 1.25 - wave * 0.05);
-    maxAlive = Math.min(46, 14 + wave * 2 + Math.max(0, wave - 10));
-
-    announce('WAVE ' + wave, spawnQueue.length + '마리가 몰려온다');
-    SFX.alarm();
-
-    // 무기 해금
-    weapons.forEach((w) => {
-      if (!w.unlocked && UNLOCK_WAVE[w.def.id] <= wave) {
-        w.unlocked = true;
-        w.reset();
-        toast(w.def.name + ' 확보! [' + (weapons.indexOf(w) + 1) + '] 키로 교체', true);
-      }
+  function setupRooms() {
+    roomStates = SCHOOL.rooms.map(function (room) {
+      return { room: room, count: roomZombieCount(room), triggered: false };
     });
-    renderSlots();
-    spawnWavePickups(wave === 1 ? 2 : randInt(2, 4));
+  }
+
+  function totalRemaining() {
+    let n = aliveZombieCount();
+    for (let i = 0; i < roomStates.length; i++) {
+      if (!roomStates[i].triggered) n += roomStates[i].count;
+    }
+    return n;
+  }
+
+  function roomsLeft() {
+    let n = 0;
+    for (let i = 0; i < roomStates.length; i++) if (!roomStates[i].triggered) n++;
+    return n;
+  }
+
+  function roomLabel(room) {
+    return room.type === 'gym' ? '체육관' : room.id + '반 교실';
+  }
+
+  /* 방 안의 빈 자리를 찾아 좀비를 풀어 놓는다 */
+  function triggerRoom(st) {
+    st.triggered = true;
+    const r = st.room;
+    const d = DIFF[settings.difficulty];
+    let placed = 0;
+
+    for (let attempt = 0; attempt < st.count * 25 && placed < st.count; attempt++) {
+      const gx = randInt(r.x0, r.x1);
+      const gy = randInt(r.y0, r.y1);
+      const x = SCHOOL.wx(gx) + rand(-1.4, 1.4);
+      const z = SCHOOL.wz(gy) + rand(-1.4, 1.4);
+      if (!SCHOOL.isSpotFree(x, z, 0.55)) continue;
+      // 플레이어 코앞에서 튀어나오지는 않게
+      if (Math.hypot(x - player.pos.x, z - player.pos.z) < 5) continue;
+
+      let type = 'walker';
+      const roll = Math.random();
+      if (r.type === 'gym') type = roll < 0.3 ? 'runner' : roll < 0.42 ? 'brute' : 'walker';
+      else type = roll < 0.18 ? 'runner' : roll < 0.23 ? 'brute' : 'walker';
+
+      const z2 = new Zombie(type, { x: x, z: z }, { hp: d.hp, speed: d.speed, dmg: d.dmg });
+      z2.addTo(scene);
+      zombies.push(z2);
+      placed++;
+    }
+
+    SFX.alarm();
+    announce(roomLabel(r), placed + '마리가 깨어났다');
     updateHud();
   }
 
-  function endWave() {
-    waveState = 'prep';
-    prepTimer = wave === 0 ? 8 : 12;
+  /* 플레이어가 어느 방에 들어갔는지 확인 */
+  function checkRoomEntry() {
+    const gx = SCHOOL.cx(player.pos.x);
+    const gy = SCHOOL.cz(player.pos.z);
+    for (let i = 0; i < roomStates.length; i++) {
+      const st = roomStates[i];
+      if (st.triggered) continue;
+      const r = st.room;
+      if (gx >= r.x0 && gx <= r.x1 && gy >= r.y0 && gy <= r.y1) {
+        triggerRoom(st);
+        return;
+      }
+    }
+  }
+
+  function checkVictory() {
+    if (victory) return;
+    if (roomsLeft() > 0) return;
+    if (aliveZombieCount() > 0) return;
+    victory = true;
+    state = 'dead'; // 조작을 멈춘다
     SFX.waveClear();
-    announce('WAVE ' + wave + ' 격퇴', '다음 웨이브까지 ' + Math.round(prepTimer) + '초');
-    // 보너스 회복
-    // 후반으로 갈수록 회복량을 줄여 누적 체력 우위를 막는다
-    const base = settings.difficulty === 'hard' ? 10 : 18;
-    const heal = Math.max(4, Math.round(base - wave * 0.8));
-    if (player.hp < player.maxHp) {
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      toast('잠시 숨을 돌린다 +' + heal + ' 체력');
-    }
-    weapons.forEach((w) => w.unlocked && w.addAmmo(0.25));
-    updateAmmoHud();
+    SFX.stopAmbient();
+    document.exitPointerLock && document.exitPointerLock();
+    hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
+    $('#gameover').querySelector('h1').textContent = '탈 출';
+    $('#go-sub').textContent = '학교를 전부 비웠다';
+    $('#g-wave').textContent = SCHOOL.rooms.length;
+    $('#g-kills').textContent = stats.kills;
+    $('#g-head').textContent = stats.headshots;
+    $('#g-acc').textContent =
+      (stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0) + '%';
+    $('#g-time').textContent = fmtTime(stats.time);
+    setTimeout(function () { showScreen('gameover'); }, 700);
   }
 
-  function trySpawn(dt) {
-    if (waveState !== 'active') return;
-    if (!spawnQueue.length) return;
-    spawnTimer -= dt;
-    if (spawnTimer > 0) return;
-    const alive = zombies.filter((z) => !z.dead).length;
-    if (alive >= maxAlive) {
-      spawnTimer = 0.4;
-      return;
-    }
-    spawnTimer = spawnInterval * rand(0.6, 1.3);
-
-    const type = spawnQueue.shift();
-    const spot = SCHOOL.randomSpawnCell(player.pos, 26, flowField);
-    if (!spot) {
-      spawnQueue.unshift(type);
-      return;
-    }
-    const d = DIFF[settings.difficulty];
-    const z = new Zombie(type, { x: spot.x, z: spot.z }, {
-      hp: d.hp * (1 + (wave - 1) * 0.07),
-      speed: d.speed * (1 + (wave - 1) * 0.015),
-      dmg: d.dmg * (1 + (wave - 1) * 0.03),
+  /* =========================================================
+     사물함 수색 / 마법 힐팩
+     ========================================================= */
+  function setupLockers() {
+    const rng = mulberry32(4823);
+    lockers = SCHOOL.lockerSpots.map(function (spot) {
+      const roll = rng();
+      // 대부분은 비어 있고, 가끔 탄약, 드물게 마법 힐팩
+      const loot = roll < 0.1 ? 'magic' : roll < 0.34 ? 'ammo' : 'empty';
+      return { x: spot.x, z: spot.z, ry: spot.ry, searched: false, loot: loot };
     });
-    z.addTo(scene);
-    zombies.push(z);
   }
 
-  /*
-    #15 대응: 시체는 좀비 1구당 메시 6개다.
-    많이 쌓이면 렌더 부담이 되므로 동시에 남는 수를 제한하고
-    오래된 것부터 가라앉는 시점을 앞당긴다.
-  */
-  const MAX_CORPSES = 10;
-  function limitCorpses() {
-    const corpses = [];
-    for (let i = 0; i < zombies.length; i++) {
-      if (zombies[i].dead && zombies[i].group.position.y > -0.1) corpses.push(zombies[i]);
+  function updateLockerPrompt() {
+    nearLocker = null;
+    let best = 3.2 * 3.2;
+    for (let i = 0; i < lockers.length; i++) {
+      const L = lockers[i];
+      if (L.searched) continue;
+      const dx = L.x - player.pos.x;
+      const dz = L.z - player.pos.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < best) {
+        best = d2;
+        nearLocker = L;
+      }
     }
-    if (corpses.length <= MAX_CORPSES) return;
-    corpses.sort((a, b) => b.deathTimer - a.deathTimer); // 오래된 것 먼저
-    for (let i = MAX_CORPSES; i < corpses.length; i++) corpses[i].sinkAfter = 0;
+    const el2 = $('#search-prompt');
+    const show = !!nearLocker;
+    if (el2.hidden === show) el2.hidden = !show;
   }
 
-  /* 좀비 종류별 킬 포인트 */
-  const KILL_VALUE = { walker: 1, runner: 2, brute: 5 };
+  function searchLocker() {
+    if (!nearLocker) return;
+    const L = nearLocker;
+    L.searched = true;
+    SFX.lockerOpen();
+
+    if (L.loot === 'magic') {
+      setTimeout(function () {
+        spawnPickup('magic', L.x, L.z);
+        toast('사물함에서 무언가 빛난다', true);
+      }, 380);
+    } else if (L.loot === 'ammo') {
+      setTimeout(function () {
+        spawnPickup('ammo', L.x, L.z);
+        toast('탄약을 찾았다');
+      }, 380);
+    } else {
+      toast('비어 있다');
+    }
+    nearLocker = null;
+    $('#search-prompt').hidden = true;
+  }
 
   function onZombieKilled(z, head, point) {
     stats.kills++;
@@ -1276,10 +1439,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (shopOpen) renderShop();
     SFX.zombieDeath(z.pos.distanceTo(player.pos));
     bloodBurst(point, { x: 0, y: 1, z: 0 }, 14);
-    if (Math.random() < 0.075 && SCHOOL.isSpotFree(z.pos.x, z.pos.z, 0.5)) {
+    if (Math.random() < 0.1 && SCHOOL.isSpotFree(z.pos.x, z.pos.z, 0.5)) {
       spawnPickup(Math.random() < 0.45 ? 'health' : 'ammo', z.pos.x, z.pos.z);
     }
     updateHud();
+    checkVictory();
   }
 
   /* =========================================================
@@ -1292,6 +1456,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     player.yaw = -Math.PI / 2; // 복도 동쪽(학교 안쪽)을 바라봄
     player.pitch = 0;
     player.hp = player.maxHp;
+    player.shield = 0;
+    player.shieldHits = 0;
     player.stamina = player.maxStamina;
     player.crouching = false;
     player.curHeight = player.height;
@@ -1308,6 +1474,26 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     // 전역 무적이라 동시에 몰려도 초당 피격 횟수가 고정된다.
     // 너무 길면 포위가 안 무서워지므로 짧게 잡는다.
     player.invuln = 0.22;
+
+    /*
+      마법 힐팩의 보조 체력.
+      체력을 대신 받아 주되, 좀비에게 5번 맞아야 1 이 닳는다.
+      (20 이면 100대를 버틴다 — 그만큼 드문 아이템)
+    */
+    if (player.shield > 0) {
+      player.shieldHits++;
+      if (player.shieldHits >= 5) {
+        player.shieldHits = 0;
+        player.shield--;
+        SFX.shieldChip();
+      }
+      SFX.hurt();
+      addShake(0.3, 0.25);
+      flashDamage();
+      updateHud();
+      return;
+    }
+
     player.hp -= amount;
     SFX.hurt();
     addShake(0.45, 0.35);
@@ -1564,12 +1750,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function updateHud() {
-    setText(el.wave, 'wave', wave === 0 ? '준비' : String(wave));
-    setText(
-      el.remaining,
-      'remain',
-      String(waveState === 'active' ? aliveZombieCount() + spawnQueue.length : 0)
-    );
+    setText(el.wave, 'wave', String(totalRemaining()));
+    setText(el.remaining, 'remain', String(roomsLeft()));
     setText(el.kills, 'kills', '처치 ' + stats.kills + ' · 생존 ' + fmtTime(stats.time));
 
     const hpR = clamp(player.hp / player.maxHp, 0, 1);
@@ -1585,6 +1767,18 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (hudCache.stam !== stR) {
       hudCache.stam = stR;
       el.stamFill.style.transform = 'scaleX(' + stR + ')';
+    }
+
+    // 마법 힐팩이 준 보조 체력
+    if (hudCache.shield !== player.shield) {
+      hudCache.shield = player.shield;
+      const on = player.shield > 0;
+      if (el.shieldWrap.hidden === on) el.shieldWrap.hidden = !on;
+      if (on) {
+        el.shieldText.textContent = player.shield;
+        el.shieldFill.style.transform =
+          'scaleX(' + clamp(player.shield / PLAYER_MAX_SHIELD, 0, 1) + ')';
+      }
     }
   }
 
@@ -1651,10 +1845,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SFX.setVolume(settings.volume);
     SFX.startAmbient();
     requestLock();
-    // 첫 웨이브 준비
-    waveState = 'prep';
-    prepTimer = 7;
-    announce('폐교에 들어섰다', '곧 첫 무리가 몰려온다');
+    announce('폐교에 들어섰다', '교실을 하나씩 비워라');
   }
 
   function resetGame() {
@@ -1665,14 +1856,19 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     clearParticles();
 
     clearAllies();
+    clearBots();
     killPoints = 0;
     shopOpen = false;
     el.shop.classList.remove('show');
     tracers.pool.forEach(function (m) { m.visible = false; });
 
-    wave = 0;
-    waveState = 'prep';
-    spawnQueue = [];
+    clearedRooms = 0;
+    victory = false;
+    $('#gameover').querySelector('h1').textContent = '사 망';
+    setupRooms();
+    setupLockers();
+    nearLocker = null;
+    $('#search-prompt').hidden = true;
     stats.kills = 0;
     stats.headshots = 0;
     stats.shots = 0;
@@ -1685,6 +1881,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     resetPlayer();
     setupWeapons();
     flowField = computeFlowField(player.pos.x, player.pos.z);
+    scatterPickups(6);
+    setupMatch();
     updateHud();
     updateAmmoHud();
   }
@@ -1729,14 +1927,14 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     document.exitPointerLock && document.exitPointerLock();
     hudEl.classList.remove('on');
     TOUCH.setVisible(false);
-    $('#g-wave').textContent = wave;
+    $('#g-wave').textContent = SCHOOL.rooms.length - roomsLeft();
     $('#g-kills').textContent = stats.kills;
     $('#g-head').textContent = stats.headshots;
     $('#g-acc').textContent =
       (stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0) + '%';
     $('#g-time').textContent = fmtTime(stats.time);
     $('#go-sub').textContent =
-      wave >= 10 ? '전설이 되어 쓰러졌다' : wave >= 5 ? '꽤 오래 버텼다' : '학교는 다시 조용해졌다';
+      stats.kills >= 60 ? '거의 다 왔었다' : stats.kills >= 25 ? '꽤 버텼다' : '학교는 다시 조용해졌다';
     setTimeout(() => showScreen('gameover'), 1750);
   }
 
@@ -1745,7 +1943,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     state = 'paused';
     hudEl.classList.remove('on');
     TOUCH.setVisible(false);
-    $('#p-wave').textContent = wave;
+    $('#p-wave').textContent = SCHOOL.rooms.length - roomsLeft();
     $('#p-kills').textContent = stats.kills;
     $('#p-time').textContent = fmtTime(stats.time);
     showScreen('pause');
@@ -1781,7 +1979,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   function toggleFlashlight() {
     player.flashlightOn = !player.flashlightOn;
-    flashlight.intensity = player.flashlightOn ? 2.9 : 0;
+    flashlight.intensity = player.flashlightOn ? 2.0 : 0;
     toast(player.flashlightOn ? '손전등 켜짐' : '손전등 꺼짐');
   }
 
@@ -1845,6 +2043,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         openShop();
         return;
       }
+      if (e.code === 'KeyE') searchLocker();
       if (e.code === 'KeyR') startReload();
       if (e.code === 'KeyF') toggleFlashlight();
       if (e.code === 'Digit1') equip(0);
@@ -1939,6 +2138,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         b.classList.add('sel');
       });
     });
+    document.querySelectorAll('[data-players]').forEach((b) => {
+      b.addEventListener('click', () => {
+        settings.players = parseInt(b.dataset.players, 10);
+        document.querySelectorAll('[data-players]').forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+      });
+    });
     document.querySelectorAll('[data-quality]').forEach((b) => {
       b.addEventListener('click', () => {
         settings.quality = b.dataset.quality;
@@ -2011,6 +2217,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
           tapFireRelease = true;
         }
         if (TOUCH.consume('reload')) startReload();
+        if (TOUCH.consume('search')) searchLocker();
         if (TOUCH.consume('weapon1')) equip(0);
         if (TOUCH.consume('weapon2')) equip(1);
         if (TOUCH.consume('weapon3')) equip(2);
@@ -2049,7 +2256,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         flow: flowField,
         neighbors: () => zombies,
         damagePlayer,
-        allies: allies,
+        allies: allies.concat(bots),
         damageAlly: function (ally, amount) {
           if (ally.hurt(amount)) {
             // 전사 처리는 updateAllies 에서 정리한다
@@ -2066,16 +2273,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         }
       }
 
-      // 웨이브 진행
-      if (waveState === 'prep') {
-        prepTimer -= dt;
-        if (prepTimer <= 0) startWave();
-      } else {
-        trySpawn(dt);
-        if (!spawnQueue.length && !zombies.some((z) => !z.dead)) endWave();
-      }
+      // 방에 들어서면 그 방 좀비가 깨어난다
+      checkRoomEntry();
+      updateLockerPrompt();
 
       updateAllies(dt);
+      updateBots(dt);
       updateTracers(dt);
       updatePickups(dt);
       updateParticles(dt);
@@ -2183,6 +2386,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       get player() { return player; },
       get allies() { return allies; },
       get zombies() { return zombies; },
+      get lockers() { return lockers; },
+      get roomStates() { return roomStates; },
+      searchLocker: searchLocker,
       get killPoints() { return killPoints; },
       // 브라우저가 rAF 를 멈춰도 시뮬레이션을 돌려 볼 수 있게
       step: function (dt, count) {

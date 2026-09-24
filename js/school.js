@@ -22,6 +22,7 @@ const SCHOOL = (function () {
   const rooms = [];
   const fixtures = []; // 형광등 {x,z,y,alive,phase,rate,base,on}
   const navCells = [];
+  const lockerSpots = []; // 사물함 위치 (아이템 수색용)
 
   /*
     소품 충돌.
@@ -439,6 +440,8 @@ const SCHOOL = (function () {
     const tr = [];
     const push = (x, z, ry) => {
       tr.push(MAT(x, 1.15, z, 0, ry, 0));
+      // 수색 가능한 사물함 목록 (ry 는 사물함이 바라보는 방향)
+      lockerSpots.push({ x: x, z: z, ry: ry });
       // 사물함은 2.2 x 0.55. 벽을 따라 놓이므로 방향에 맞춰 반치수를 준다
       const alongX = Math.abs(Math.sin(ry)) < 0.5;
       addPropCollider(x, z, alongX ? 1.1 : 0.3, alongX ? 0.3 : 1.1, true);
@@ -949,6 +952,7 @@ const SCHOOL = (function () {
     rooms.length = 0;
     fixtures.length = 0;
     navCells.length = 0;
+    lockerSpots.length = 0;
     lightPool = [];
     const rng = mulberry32(20090212);
     srng = rng; // 이 시점부터 모듈 내 rand/randInt 도 시드를 따른다
@@ -1017,6 +1021,7 @@ const SCHOOL = (function () {
     zone,
     rooms,
     navCells,
+    lockerSpots,
     navBlocked,
     idx,
     isSolid,

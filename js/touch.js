@@ -63,6 +63,7 @@ const TOUCH = (function () {
     mkButton(pad, 'tc-fire', '발사', 'fire');
     mkButton(pad, 'tc-jump', '점프', 'jump');
     mkButton(pad, 'tc-reload', '재장전', 'reload', true);
+    mkButton(pad, 'tc-search', '수색', 'search', true);
     mkButton(pad, 'tc-crouch', '앉기', 'crouch');
 
     /* 왼쪽 보조 버튼 */

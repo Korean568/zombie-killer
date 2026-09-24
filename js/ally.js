@@ -12,7 +12,7 @@ const ALLY_RANKS = [
     cooldown: 1.15,
     range: 24,
     accuracy: 0.72,
-    uniform: 0x4d5642,
+    uniform: 0x2c3226,
     badge: 0x6e7468,
     scale: 1.0,
   },
@@ -24,7 +24,7 @@ const ALLY_RANKS = [
     cooldown: 0.9,
     range: 28,
     accuracy: 0.8,
-    uniform: 0x49523e,
+    uniform: 0x2a3024,
     badge: 0xb6bcae,
     scale: 1.02,
   },
@@ -36,7 +36,7 @@ const ALLY_RANKS = [
     cooldown: 0.68,
     range: 32,
     accuracy: 0.87,
-    uniform: 0x444c3a,
+    uniform: 0x272d20,
     badge: 0xd9c273,
     scale: 1.05,
   },
@@ -48,7 +48,7 @@ const ALLY_RANKS = [
     cooldown: 0.48,
     range: 38,
     accuracy: 0.93,
-    uniform: 0x3e4634,
+    uniform: 0x232a1d,
     badge: 0xf2d24f,
     scale: 1.09,
   },
@@ -65,14 +65,14 @@ const AllyAssets = (function () {
   /* 계급마다 군복 색이 달라 색깔별로 파트를 나눠 둔다 */
   function parts(rank) {
     const R = ALLY_RANKS[rank];
-    const SKIN = 0xa8886a;
+    const SKIN = 0x6d5a45;
     const BOOT = 0x22252a;
     const GUN = 0x2b3035;
 
     const p = [];
     // 몸통 / 방탄조끼
     p.push({ geo: new THREE.BoxGeometry(0.5, 0.72, 0.3), matrix: MAT(0, 1.26, 0), color: R.uniform });
-    p.push({ geo: new THREE.BoxGeometry(0.54, 0.4, 0.34), matrix: MAT(0, 1.34, 0), color: 0x333a2c });
+    p.push({ geo: new THREE.BoxGeometry(0.54, 0.4, 0.34), matrix: MAT(0, 1.34, 0), color: 0x20241b });
     // 목 / 머리
     p.push({ geo: new THREE.BoxGeometry(0.18, 0.12, 0.18), matrix: MAT(0, 1.68, 0), color: SKIN });
     p.push({ geo: new THREE.BoxGeometry(0.27, 0.28, 0.27), matrix: MAT(0, 1.86, 0.01), color: SKIN });
@@ -88,8 +88,14 @@ const AllyAssets = (function () {
     p.push({ geo: new THREE.BoxGeometry(0.2, 0.14, 0.26), matrix: MAT(-0.14, 0.07, 0.03), color: BOOT });
     p.push({ geo: new THREE.BoxGeometry(0.2, 0.14, 0.26), matrix: MAT(0.14, 0.07, 0.03), color: BOOT });
     // 소총 (앞으로 겨눈 자세로 고정)
-    p.push({ geo: new THREE.BoxGeometry(0.07, 0.09, 0.5), matrix: MAT(0.2, 1.36, -0.3), color: GUN });
-    p.push({ geo: new THREE.BoxGeometry(0.05, 0.14, 0.09), matrix: MAT(0.2, 1.27, -0.18), color: GUN });
+    /*
+      이 캐릭터들은 atan2(dx, dz) 로 회전하므로 로컬 +Z 가 정면이다.
+      총이 -Z 에 있어서 등 뒤에 매달려 보였다. 팔이 뻗는 +Z 쪽,
+      손이 오는 높이(y 약 1.42)에 맞춰 놓는다.
+    */
+    p.push({ geo: new THREE.BoxGeometry(0.07, 0.09, 0.5), matrix: MAT(0.18, 1.42, 0.42), color: GUN });
+    p.push({ geo: new THREE.BoxGeometry(0.05, 0.13, 0.09), matrix: MAT(0.18, 1.33, 0.3), color: GUN });
+    p.push({ geo: new THREE.BoxGeometry(0.045, 0.05, 0.17), matrix: MAT(0.18, 1.47, 0.18), color: GUN });
     return p;
   }
 
@@ -189,8 +195,11 @@ class Ally {
     this.armL.position.set(-0.32, 1.54, 0);
     this.armR.position.set(0.32, 1.54, 0);
     // 소총을 잡은 자세
-    this.armL.rotation.x = -1.35;
-    this.armR.rotation.x = -1.42;
+    // 팔은 +Z(정면)로 뻗어 총을 잡는 자세
+    this.armL.rotation.x = -1.28;
+    this.armL.rotation.z = 0.22;
+    this.armR.rotation.x = -1.44;
+    this.armR.rotation.z = -0.12;
     [this.armL, this.armR].forEach((g) => {
       g.add(new THREE.Mesh(A.arm, limbMat));
       this.bodyRoot.add(g);
@@ -217,7 +226,7 @@ class Ally {
         toneMapped: false,
       })
     );
-    this.muzzle.position.set(0.2, 1.36, -0.58);
+    this.muzzle.position.set(0.18, 1.43, 0.72);
     this.muzzle.visible = false;
     this.bodyRoot.add(this.muzzle);
   }

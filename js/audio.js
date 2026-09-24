@@ -341,6 +341,72 @@ const SFX = (function () {
     n.stop(t + 0.3);
   }
 
+  /* ---------- 사물함 열기 (삐걱 + 금속) ---------- */
+  function lockerOpen() {
+    if (!ctx) return;
+    const t = now();
+    const n = noiseSource();
+    const g = ctx.createGain();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(rand(700, 1100), t);
+    f.frequency.linearRampToValueAtTime(rand(1800, 2600), t + 0.3);
+    f.Q.value = 7;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    n.connect(f);
+    f.connect(g);
+    g.connect(master);
+    n.start(t);
+    n.stop(t + 0.45);
+
+    const o = ctx.createOscillator();
+    const og = ctx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(160, t + 0.3);
+    o.frequency.exponentialRampToValueAtTime(70, t + 0.4);
+    env(og, t + 0.3, 0.16, 0.004, 0.1);
+    o.connect(og);
+    og.connect(master);
+    o.start(t + 0.3);
+    o.stop(t + 0.45);
+  }
+
+  /* ---------- 마법 힐팩 (신비로운 상승음) ---------- */
+  function magicHeal() {
+    if (!ctx) return;
+    const t = now();
+    [523, 659, 784, 1047, 1319].forEach(function (fr, i) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(fr * 0.5, t + i * 0.07);
+      o.frequency.exponentialRampToValueAtTime(fr, t + i * 0.07 + 0.25);
+      env(g, t + i * 0.07, 0.2, 0.02, 0.45);
+      o.connect(g);
+      g.connect(master);
+      o.start(t + i * 0.07);
+      o.stop(t + i * 0.07 + 0.55);
+    });
+  }
+
+  /* ---------- 보조 체력이 1 닳을 때 ---------- */
+  function shieldChip() {
+    if (!ctx) return;
+    const t = now();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(880, t);
+    o.frequency.exponentialRampToValueAtTime(420, t + 0.12);
+    env(g, t, 0.18, 0.003, 0.12);
+    o.connect(g);
+    g.connect(master);
+    o.start(t);
+    o.stop(t + 0.18);
+  }
+
   /* ---------- 아이템 획득 ---------- */
   function pickup(kind) {
     if (!ctx) return;
@@ -600,6 +666,9 @@ const SFX = (function () {
     zombieDeath,
     hurt,
     pickup,
+    lockerOpen,
+    magicHeal,
+    shieldChip,
     alarm,
     waveClear,
     step,

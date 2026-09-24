@@ -118,6 +118,38 @@
   #hp-fill.low{animation:hpblink .6s steps(2) infinite;}
   @keyframes hpblink{50%{opacity:.4}}
   #stam-fill{background:linear-gradient(90deg,#3d6b2f,#9fb84a);}
+  /* 마법 힐팩이 주는 보조 체력 */
+  #shield-wrap{margin-top:9px;}
+  #shield-fill{background:linear-gradient(90deg,#b58a12,#ffd84a);}
+  #shield-wrap .bar-label b{color:#ffd84a;}
+  #shield-wrap .bar{height:7px;border-color:rgba(255,216,74,.32);}
+
+  /* 매치 순위표 */
+  #scoreboard{
+    position:fixed;right:28px;top:22px;width:190px;
+    background:rgba(10,11,12,.42);border:1px solid rgba(255,255,255,.1);
+    padding:8px 10px;
+  }
+  .sb-title{font-size:9px;letter-spacing:.24em;color:var(--muted);margin-bottom:6px;}
+  .sb-title em{font-style:normal;color:#e0dcc9;}
+  .sb-row{display:flex;align-items:baseline;gap:6px;font-size:11px;color:#a9a597;
+    line-height:1.7;}
+  .sb-row i{font-style:normal;width:16px;color:#6c7166;text-align:right;}
+  .sb-row span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sb-row b{color:#c9c4b4;font-weight:700;}
+  .sb-row.me{color:#ffd84a;}
+  .sb-row.me b{color:#ffd84a;}
+  .sb-row.me i{color:#ffd84a;}
+  body.touch-mode #scoreboard{display:none;}
+
+  #search-prompt{
+    position:fixed;left:50%;bottom:32%;transform:translateX(-50%);
+    font-size:14px;letter-spacing:.08em;color:#ece8d8;
+    background:rgba(10,11,12,.62);padding:7px 16px;
+    border:1px solid rgba(255,255,255,.2);text-shadow:0 1px 3px #000;
+  }
+  #search-prompt b{color:#e4c14a;font-size:15px;margin-right:6px;}
+  body.touch-mode #search-prompt{bottom:38%;font-size:12px;padding:5px 12px;}
   #stam-wrap{margin-top:9px;}
   #stam-wrap .bar{height:5px;}
 
@@ -350,6 +382,8 @@
   .tc-pad .tc-jump{position:absolute;right:108px;bottom:96px;width:62px;height:62px;}
   .tc-pad .tc-reload{position:absolute;right:16px;bottom:158px;width:66px;height:66px;}
   .tc-pad .tc-crouch{position:absolute;right:110px;bottom:22px;width:62px;height:62px;}
+  .tc-pad .tc-search{position:absolute;right:104px;bottom:158px;width:58px;height:58px;
+    color:#e4c14a;border-color:rgba(228,193,74,.4);}
 
   .tc-left{position:fixed;left:18px;bottom:18px;}
   .tc-left .tc-sprint{width:70px;height:70px;}
@@ -438,9 +472,9 @@
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
 
   <div id="panel-tl">
-    <div class="wave-label">WAVE</div>
+    <div class="wave-label">남은 좀비</div>
     <div class="wave-num"><em id="wave">1</em></div>
-    <div id="remaining">남은 좀비 <b>0</b></div>
+    <div id="remaining">남은 구역 <b>0</b></div>
     <div id="killcount">처치 0 · 생존 0:00</div>
     <div id="points"><b>0</b><span>킬 포인트</span></div>
     <div id="squad"></div>
@@ -453,6 +487,10 @@
   <div id="panel-bl">
     <div class="bar-label"><span>체력</span><b id="hp-text">100</b></div>
     <div class="bar"><span id="hp-fill"></span></div>
+    <div id="shield-wrap" hidden>
+      <div class="bar-label"><span>보조 체력</span><b id="shield-text">0</b></div>
+      <div class="bar"><span id="shield-fill"></span></div>
+    </div>
     <div id="stam-wrap">
       <div class="bar"><span id="stam-fill"></span></div>
     </div>
@@ -466,7 +504,12 @@
     <div id="slots"></div>
   </div>
 
-  <div id="compass">F 손전등 · R 재장전 · 1 2 3 무기 · B 상점</div>
+  <div id="scoreboard">
+    <div class="sb-title">매치 순위 <em id="sb-count">0</em>명</div>
+    <div id="sb-rows"></div>
+  </div>
+  <div id="search-prompt" hidden><b>E</b> 사물함 수색</div>
+  <div id="compass">F 손전등 · R 재장전 · E 수색 · 1 2 3 무기 · B 상점</div>
 </div>
 
 <!-- ================= 상점 ================= -->
@@ -515,6 +558,13 @@
       <button class="opt" data-quality="high">높음<small>그림자</small></button>
     </div>
     <div class="row">
+      <div class="row-title">매치 인원</div>
+      <button class="opt" data-players="10">10명</button>
+      <button class="opt sel" data-players="20">20명</button>
+      <button class="opt" data-players="50">50명</button>
+      <button class="opt" data-players="100">100명</button>
+    </div>
+    <div class="row">
       <div class="row-title">마우스 감도</div>
       <div class="slider-row">
         <input type="range" id="sens" min="20" max="300" value="100">
@@ -543,9 +593,10 @@
     <div><kbd>F</kbd> 손전등</div>
     <div><kbd>휠</kbd> 무기 순환</div>
     <div><kbd>B</kbd> 부하 상점</div>
+    <div><kbd>E</kbd> 사물함 수색</div>
     <div><kbd>ESC</kbd> 일시정지</div>
   </div>
-  <div class="hint">헤드샷은 피해량이 크게 증가합니다 · 체육관은 넓지만 위험합니다</div>
+  <div class="hint">교실 문을 열면 안에 있던 좀비가 깨어납니다 · 사물함을 수색하면 마법 힐팩이 나올 수 있습니다</div>
 </div>
 
 <!-- ================= 일시정지 ================= -->
@@ -553,7 +604,7 @@
   <h1>일시정지</h1>
   <div class="card">
     <div class="stats">
-      <div class="stat"><b id="p-wave">1</b><span>WAVE</span></div>
+      <div class="stat"><b id="p-wave">0</b><span>정리한 구역</span></div>
       <div class="stat"><b id="p-kills">0</b><span>처치</span></div>
       <div class="stat"><b id="p-time">0:00</b><span>생존</span></div>
     </div>
@@ -569,7 +620,7 @@
   <div class="tagline" id="go-sub">학교는 다시 조용해졌다</div>
   <div class="card">
     <div class="stats">
-      <div class="stat hl"><b id="g-wave">1</b><span>도달 WAVE</span></div>
+      <div class="stat hl"><b id="g-wave">0</b><span>정리한 구역</span></div>
       <div class="stat"><b id="g-kills">0</b><span>처치</span></div>
       <div class="stat"><b id="g-head">0</b><span>헤드샷</span></div>
       <div class="stat"><b id="g-acc">0%</b><span>명중률</span></div>
@@ -592,5 +643,6 @@
 <script src="js/zombie.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/ally.js"></script>
+<script src="js/bot.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/game.js"></script>
