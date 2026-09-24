@@ -2,14 +2,14 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 36; // 로드된 번들 확인용
+window.GAME_BUILD = 38; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
   server/ 를 배포한 뒤 여기에 wss:// 주소를 넣으면 진짜 대전이 된다.
   비워 두면 전부 봇으로 진행한다. (?server=wss://... 로도 덮어쓸 수 있다)
 */
-const MATCH_SERVER_URL = 'wss://zombie-killer-match.shocking-ice.workers.dev';
+const MATCH_SERVER_URL = 'wss://zombie-killer-match.traveling-resolution.workers.dev';
 
 (function () {
   'use strict';
@@ -63,7 +63,6 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.shocking-ice.workers.dev';
   /* ---------------- 설정 ---------------- */
   const settings = {
     difficulty: 'normal',
-    players: 20,
     room: 'main',
     quality: 'medium',
     sensitivity: 1.0,
@@ -172,14 +171,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   let victory = false;
 
   /* ---------------- 매치(봇) ---------------- */
-  /*
-    정적 호스팅이라 실제 네트워크 대전은 불가능하다.
-    명단은 10~100명을 채우되, 3D 로 실제 움직이는 봇은 성능 때문에
-    MAX_LIVE_BOTS 명까지만 만들고 나머지는 점수판에만 존재한다.
-  */
-  const MAX_LIVE_BOTS = 8;
-  let bots = [];
-  let remotePlayers = new Map(); // netId -> RemotePlayer
+  /* 매치에는 실제 접속자만 들어온다 (봇 없음) */
+    let remotePlayers = new Map(); // netId -> RemotePlayer
+
+  /* 이 인원이 모여야 경기가 시작된다 */
+  const MIN_PLAYERS = 10;
+  let waitTimer = 0;
+  let offlineTimer = 0;
   let roster = [];
   let rosterTimer = 0;
 
@@ -1050,45 +1048,17 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   /* =========================================================
      매치 / 점수판
      ========================================================= */
+  /* 매치 명단은 실제 접속자만으로 구성한다. 봇은 없다. */
   function setupMatch() {
-    clearBots();
-
-    /*
-      실제 접속자가 먼저 자리를 차지하고, 남는 자리만 봇으로 채운다.
-      서버가 없거나 접속에 실패하면 전부 봇이 된다.
-    */
-    const humans = NET.status === 'online' ? NET.list() : [];
-    roster = [{ name: NET.myName || '나', kills: 0, me: true, bot: null }];
-    humans.forEach(function (h) {
-      roster.push({ name: h.name, kills: h.kills || 0, me: false, bot: null, netId: h.id });
-    });
-
-    const total = Math.max(settings.players, roster.length);
-    const botsNeeded = total - roster.length;
-    for (let i = 0; i < botsNeeded; i++) {
-      roster.push({ name: botName(i), kills: 0, me: false, bot: null });
-    }
-
-    // 남는 자리 중 앞쪽 몇 명만 실제 3D 봇으로 내보낸다
-    const firstBot = 1 + humans.length;
-    const live = Math.min(MAX_LIVE_BOTS, botsNeeded);
-    for (let i = 0; i < live; i++) {
-      // 맵 전체(176x64m)에 흩뿌리면 안개 너머라 영영 못 만난다.
-      // 매치 시작처럼 플레이어 주변에 배치한다.
-      const spot =
-        SCHOOL.randomSpawnCell(player.pos, 6, flowField, 26) ||
-        SCHOOL.randomSpawnCell(player.pos, 6, flowField, 60) ||
-        SCHOOL.randomSpawnCell(player.pos, 6, flowField);
-      if (!spot) continue;
-      const slot = roster[firstBot + i];
-      if (!slot) break;
-      const b = new Bot({ x: spot.x, z: spot.z }, randInt(0, 3), slot.name);
-      b.addTo(scene);
-      bots.push(b);
-      slot.bot = b;
+    roster = [{ name: NET.myName || '나', kills: 0, me: true }];
+    if (NET.status === 'online') {
+      NET.list().forEach(function (h) {
+        roster.push({ name: h.name, kills: h.kills || 0, me: false, netId: h.id });
+      });
     }
     renderScoreboard();
   }
+
 
   /* 서버에서 받은 사람들을 3D 아바타로 반영 */
   function syncRemotePlayers() {
@@ -1128,49 +1098,20 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     remotePlayers.forEach(function (r) { r.update(dt); });
   }
 
-  function clearBots() {
-    bots.forEach(function (b) { b.removeFrom(scene); });
-    bots = [];
-  }
-
-  function updateBots(dt) {
-    const ctx = {
-      playerPos: player.pos,
-      zombies: zombies,
-      bots: bots,
-      tracer: spawnTracer,
-      onBotHit: function (z, point, killed, head) {
-        bloodBurst(point, { x: 0, y: 1, z: 0 }, head ? 10 : 6);
-        SFX.flesh(0.45);
-        if (killed) onZombieKilled(z, head, point);
-      },
-    };
-    for (let i = bots.length - 1; i >= 0; i--) {
-      const b = bots[i];
-      b.update(dt, ctx);
-      if (b.removeMe) {
-        b.removeFrom(scene);
-        bots.splice(i, 1);
-      }
-    }
-
-    /* 명단에 없는(화면 밖) 참가자들의 점수를 천천히 굴린다 */
+  /* 접속자 점수를 주기적으로 훑는다 (예전엔 updateBots 안에 있었다) */
+  function updateRoster(dt) {
     rosterTimer -= dt;
-    if (rosterTimer <= 0) {
-      rosterTimer = 2.5;
-      for (let i = 1; i < roster.length; i++) {
-        const r = roster[i];
-        if (r.netId !== undefined) {
-          // 실제 접속자는 서버가 준 값을 쓴다
-          const h = NET.list().find(function (x) { return x.id === r.netId; });
-          if (h) r.kills = h.kills || 0;
-        } else if (r.bot) r.kills = r.bot.kills;
-        else if (Math.random() < 0.28) r.kills++;
-      }
-      roster[0].kills = stats.kills;
-      renderScoreboard();
+    if (rosterTimer > 0) return;
+    rosterTimer = 1.5;
+    for (let i = 1; i < roster.length; i++) {
+      const r = roster[i];
+      const h = NET.list().find(function (x) { return x.id === r.netId; });
+      if (h) r.kills = h.kills || 0;
     }
+    roster[0].kills = stats.kills;
+    renderScoreboard();
   }
+
 
   function renderScoreboard() {
     if (!roster.length) return;
@@ -1924,9 +1865,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (!built) return;
     applyQuality();
     resetGame();
-    state = 'playing';
-    hudEl.classList.add('on');
-    TOUCH.setVisible(true);
     hideScreens();
     SFX.init();
     SFX.resume();
@@ -1937,10 +1875,17 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       멀티플레이 접속.
       서버 주소가 없으면 조용히 오프라인(전부 봇)으로 간다.
     */
-    NET.connect(settings.room, updateNetBadge);
+    NET.connect(settings.room, function () {
+      updateNetBadge();
+      updateWaitScreen();
+    });
     updateNetBadge();
 
-    requestLock();
+    /*
+      바로 시작하지 않고 사람이 모일 때까지 기다린다.
+      서버에 못 붙었으면 기다릴 이유가 없으니 혼자 시작한다.
+    */
+    enterWaiting();
     announce('폐교에 들어섰다', '교실을 하나씩 비워라');
   }
 
@@ -1952,7 +1897,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     clearParticles();
 
     clearAllies();
-    clearBots();
     clearRemotePlayers();
     killPoints = 0;
     shopOpen = false;
@@ -2057,6 +2001,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function toMenu() {
+    $('#waiting').classList.remove('show');
+    NET.disconnect();
     shopOpen = false;
     el.shop.classList.remove('show');
     TOUCH.setVisible(false);
@@ -2065,6 +2011,65 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     hudEl.classList.remove('on');
     document.exitPointerLock && document.exitPointerLock();
     showScreen('start');
+  }
+
+  /* =========================================================
+     대기 화면
+     ========================================================= */
+  function enterWaiting() {
+    state = 'waiting';
+    waitTimer = 0;
+    offlineTimer = 0;
+    hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
+    $('#waiting').classList.add('show');
+    updateWaitScreen();
+  }
+
+  function playerCount() {
+    return NET.status === 'online' ? NET.count + 1 : 1;
+  }
+
+  function updateWaitScreen() {
+    if (state !== 'waiting') return;
+    const now = playerCount();
+    $('#wait-now').textContent = now;
+    $('#wait-need').textContent = MIN_PLAYERS;
+    $('#wait-fill').style.transform =
+      'scaleX(' + clamp(now / MIN_PLAYERS, 0, 1).toFixed(3) + ')';
+    $('#wait-room').textContent = NET.room || settings.room || '-';
+    $('#wait-name').textContent = NET.myName || '-';
+
+    const msg = $('#wait-msg');
+    if (NET.status === 'connecting') {
+      msg.textContent = '서버에 접속하는 중';
+    } else if (NET.status !== 'online') {
+      /*
+        서버에 못 붙었으면 기다릴 상대가 없다.
+        잠깐 알려 준 뒤 혼자 시작한다 (발표 중에 멈춰 있으면 안 된다).
+      */
+      msg.textContent = '서버에 연결할 수 없어 혼자 시작합니다';
+      offlineTimer += 0.5;
+      if (offlineTimer > 2.5) {
+        beginMatch();
+        return;
+      }
+    } else {
+      msg.textContent = '다른 플레이어를 기다리는 중';
+    }
+
+    if (now >= MIN_PLAYERS) beginMatch();
+  }
+
+  function beginMatch() {
+    if (state !== 'waiting') return;
+    $('#waiting').classList.remove('show');
+    state = 'playing';
+    hudEl.classList.add('on');
+    TOUCH.setVisible(true);
+    setupMatch();
+    announce('폐교에 들어섰다', '교실을 하나씩 비워라');
+    requestLock();
   }
 
   function updateNetBadge() {
@@ -2138,6 +2143,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function bindInput() {
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
+        if (state === 'waiting') {
+          $('#waiting').classList.remove('show');
+          toMenu();
+          return;
+        }
         if (shopOpen) {
           closeShop();
           return;
@@ -2253,13 +2263,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         b.classList.add('sel');
       });
     });
-    document.querySelectorAll('[data-players]').forEach((b) => {
-      b.addEventListener('click', () => {
-        settings.players = parseInt(b.dataset.players, 10);
-        document.querySelectorAll('[data-players]').forEach((x) => x.classList.remove('sel'));
-        b.classList.add('sel');
-      });
-    });
     document.querySelectorAll('[data-quality]').forEach((b) => {
       b.addEventListener('click', () => {
         settings.quality = b.dataset.quality;
@@ -2293,6 +2296,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       try { localStorage.setItem('zk_room', roomEl.value); } catch (e) {}
     });
 
+    $('#btn-solo').addEventListener('click', beginMatch);
     $('#shop-close').addEventListener('click', closeShop);
     $('#btn-start').addEventListener('click', startGame);
     $('#btn-resume').addEventListener('click', resumeGame);
@@ -2384,7 +2388,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         flow: flowField,
         neighbors: () => zombies,
         damagePlayer,
-        allies: allies.concat(bots),
+        allies: allies,
         damageAlly: function (ally, amount) {
           if (ally.hurt(amount)) {
             // 전사 처리는 updateAllies 에서 정리한다
@@ -2407,8 +2411,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       SCHOOL.updateDoors(dt);
 
       updateAllies(dt);
-      updateBots(dt);
       updateRemotePlayers(dt);
+      updateRoster(dt);
       NET.update(dt, {
         x: +player.pos.x.toFixed(2),
         z: +player.pos.z.toFixed(2),
@@ -2438,6 +2442,23 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         announceTimer -= dt;
         if (announceTimer <= 0) el.announce.style.opacity = '0';
       }
+    } else if (state === 'waiting') {
+      // 사람이 모이는 동안에도 학교는 살아 있다
+      waitTimer -= dt;
+      if (waitTimer <= 0) {
+        waitTimer = 0.5;
+        updateWaitScreen();
+      }
+      updateRemotePlayers(dt);
+      NET.update(dt, {
+        x: +player.pos.x.toFixed(2),
+        z: +player.pos.z.toFixed(2),
+        y: +player.yaw.toFixed(3),
+        h: Math.ceil(player.hp),
+        k: 0,
+      });
+      SCHOOL.update(dt, player.pos, time);
+      updateParticles(dt);
     } else if (state === 'shop') {
       // 상점 중에는 전투가 멈춘다. 화면만 갱신.
       updateTracers(dt);
@@ -2468,7 +2489,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     renderer.render(scene, camera);
 
     // 뷰모델을 월드 위에 겹쳐 그린다 (깊이만 초기화해서 벽을 뚫지 않게)
-    if (state !== 'menu' && state !== 'shop' && viewRoot.visible) {
+    if (state === 'playing' && viewRoot.visible) {
       renderer.autoClear = false;
       renderer.clearDepth();
       renderer.render(viewScene, viewCamera);
@@ -2534,7 +2555,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       get viewModel() { return viewModel; },
       get player() { return player; },
       get allies() { return allies; },
-      get bots() { return bots; },
       get roster() { return roster; },
       setupMatch: function(){ return setupMatch(); },
       get zombies() { return zombies; },

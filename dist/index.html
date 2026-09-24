@@ -330,6 +330,20 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   #loading p{font-size:13px;letter-spacing:.3em;color:var(--muted);}
 
+  /* ============ 대기 화면 ============ */
+  .wait-count{display:flex;align-items:baseline;justify-content:center;gap:8px;
+    font-size:15px;color:var(--muted);}
+  .wait-count b{font-size:44px;font-weight:800;color:#e4c14a;line-height:1;}
+  .wait-count em{font-style:normal;font-size:26px;font-weight:700;color:#c9c4b4;}
+  .wait-bar{height:6px;margin-top:16px;background:rgba(255,255,255,.1);
+    border:1px solid rgba(255,255,255,.14);position:relative;overflow:hidden;}
+  .wait-bar>span{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);
+    background:linear-gradient(90deg,#8e7016,#ffd84a);transition:transform .3s;}
+  .wait-room{margin-top:14px;font-size:12px;color:#7d8172;letter-spacing:.06em;}
+  .wait-room b{color:#c9c4b4;font-weight:700;}
+  #wait-msg::after{content:'';animation:waitDots 1.4s steps(4) infinite;}
+  @keyframes waitDots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+
   /* ============ 점프스케어 ============ */
   #jumpscare{
     /* 흔들 때 검은 테두리가 보이지 않도록 화면보다 조금 크게 */
@@ -585,15 +599,7 @@
       </div>
       <div class="net-note" id="net-note">같은 방 코드를 넣으면 친구와 같은 매치에 들어갑니다 · 이름은 접속할 때 자동으로 정해집니다</div>
     </div>
-    <div class="row">
-      <div class="row-title">매치 인원</div>
-      <button class="opt" data-players="10">10명</button>
-      <button class="opt sel" data-players="20">20명</button>
-      <button class="opt" data-players="50">50명</button>
-      <button class="opt" data-players="100">100명</button>
-    </div>
-    <div class="row">
-      <div class="row-title">마우스 감도</div>
+    
       <div class="slider-row">
         <input type="range" id="sens" min="20" max="300" value="100">
         <span id="sens-val">1.00</span>
@@ -657,6 +663,18 @@
   </div>
   <button class="btn" id="btn-retry">다시 도전</button>
   <button class="btn ghost" id="btn-menu">처음으로</button>
+</div>
+
+<div class="screen" id="waiting">
+  <h1>대기 중</h1>
+  <div class="tagline" id="wait-msg">다른 플레이어를 기다리는 중…</div>
+  <div class="card" style="max-width:420px">
+    <div class="wait-count"><b id="wait-now">1</b><span>/</span><em id="wait-need">10</em><span>명</span></div>
+    <div class="wait-bar"><span id="wait-fill"></span></div>
+    <div class="wait-room">방 <b id="wait-room">-</b> · 나는 <b id="wait-name">-</b></div>
+  </div>
+  <button class="btn ghost" id="btn-solo">기다리지 않고 시작</button>
+  <div class="hint">같은 방 코드를 넣은 친구가 들어오면 여기 숫자가 올라갑니다</div>
 </div>
 
 <div id="jumpscare"><div id="js-face"></div><div id="js-flash"></div></div>
