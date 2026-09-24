@@ -12,6 +12,7 @@ const TICK_MS = 50; // 20Hz 로 상태를 뿌린다
 const IDLE_MS = 15000; // 15초간 소식 없으면 끊어진 것으로 본다
 const MAX_PER_ROOM = 100; // 한 방 정원. 차면 다음 방이 열린다
 const MAX_SHARDS = 50; // 같은 이름으로 열 수 있는 방 개수
+const MIN_TO_START = 10; // 이 인원이 모이면 시작한다
 
 export class MatchRoom {
   constructor(state, env) {
@@ -20,6 +21,7 @@ export class MatchRoom {
     this.players = new Map(); // id -> {ws, name, num, last, state}
     this.nextId = 1;
     this.usedNumbers = new Set(); // 방 안에서 겹치지 않는 플레이어 번호
+    this.started = false;         // 한 번 시작하면 이후 들어오는 사람은 바로 합류한다
     this.timer = null;
   }
 
@@ -50,8 +52,21 @@ export class MatchRoom {
     const entry = { ws: server, name, num, last: Date.now(), state: null, kills: 0 };
     this.players.set(id, entry);
 
-    // 접속한 본인에게 자기 id 와 현재 인원을 알려 준다
-    send(server, { t: 'welcome', id, name, players: this.roster(), size: this.players.size });
+    // 정원이 모이면 시작. 이미 시작된 방이면 새로 온 사람은 곧바로 합류한다
+    if (!this.started && this.players.size >= MIN_TO_START) {
+      this.started = true;
+      this.broadcast({ t: 'start' });
+    }
+
+    send(server, {
+      t: 'welcome',
+      id,
+      name,
+      players: this.roster(),
+      size: this.players.size,
+      started: this.started,
+      need: MIN_TO_START,
+    });
     this.broadcast({ t: 'join', id, name }, id);
     this.ensureTimer();
 
@@ -137,11 +152,22 @@ export class MatchRoom {
         }
       }
       if (!this.players.size) {
+        this.started = false; // 방이 비면 처음부터 다시 모은다
         clearInterval(this.timer);
         this.timer = null;
         return;
       }
-      this.broadcast({ t: 'sync', players: this.roster(), size: this.players.size });
+      if (!this.started && this.players.size >= MIN_TO_START) {
+        this.started = true;
+        this.broadcast({ t: 'start' });
+      }
+      this.broadcast({
+        t: 'sync',
+        players: this.roster(),
+        size: this.players.size,
+        started: this.started,
+        need: MIN_TO_START,
+      });
     }, TICK_MS);
   }
 

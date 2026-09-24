@@ -539,7 +539,7 @@
   </div>
 
   <div id="scoreboard">
-    <div class="sb-title">매치 순위 <em id="sb-count">0</em>명</div>
+    <div class="sb-title">접속자 <em id="sb-count">0</em>명</div>
     <div id="sb-rows"></div>
   </div>
   <div id="net-badge">오프라인</div>
@@ -592,13 +592,7 @@
       <button class="opt sel" data-quality="medium">보통</button>
       <button class="opt" data-quality="high">높음<small>그림자</small></button>
     </div>
-    <div class="row">
-      <div class="row-title">멀티플레이</div>
-      <div class="net-row">
-        <input type="text" id="roomcode" maxlength="12" placeholder="방 코드 (비우면 main)" autocomplete="off">
-      </div>
-      <div class="net-note" id="net-note">같은 방 코드를 넣으면 친구와 같은 매치에 들어갑니다 · 이름은 접속할 때 자동으로 정해집니다</div>
-    </div>
+    
     
       <div class="slider-row">
         <input type="range" id="sens" min="20" max="300" value="100">
@@ -671,10 +665,10 @@
   <div class="card" style="max-width:420px">
     <div class="wait-count"><b id="wait-now">1</b><span>/</span><em id="wait-need">10</em><span>명</span></div>
     <div class="wait-bar"><span id="wait-fill"></span></div>
-    <div class="wait-room">방 <b id="wait-room">-</b> · 나는 <b id="wait-name">-</b></div>
+    <div class="wait-room">나는 <b id="wait-name">-</b> <span id="wait-room" hidden></span></div>
   </div>
   <button class="btn ghost" id="btn-solo">기다리지 않고 시작</button>
-  <div class="hint">같은 방 코드를 넣은 친구가 들어오면 여기 숫자가 올라갑니다</div>
+  <div class="hint">링크를 연 사람은 모두 같은 학교로 들어옵니다</div>
 </div>
 
 <div id="jumpscare"><div id="js-face"></div><div id="js-flash"></div></div>

@@ -18,6 +18,8 @@ const NET = (function () {
   let ws = null;
   let myId = null;
   let myName = '';
+  let started = false;
+  let needCount = 10;
   let status = 'off'; // off | connecting | online | failed
   let remotes = new Map(); // id -> {id, name, kills, s}
   let sendTimer = 0;
@@ -86,12 +88,19 @@ const NET = (function () {
       if (m.t === 'welcome') {
         myId = m.id;
         myName = m.name || '';
+        started = !!m.started;
+        if (m.need) needCount = m.need;
         remotes.clear();
         (m.players || []).forEach(function (p) {
           if (p.id !== myId) remotes.set(p.id, p);
         });
         if (onRosterChange) onRosterChange();
+      } else if (m.t === 'start') {
+        started = true;
+        if (onRosterChange) onRosterChange();
       } else if (m.t === 'sync') {
+        if (m.started) started = true;
+        if (m.need) needCount = m.need;
         const seen = new Set();
         (m.players || []).forEach(function (p) {
           if (p.id === myId) return;
@@ -131,6 +140,7 @@ const NET = (function () {
     }
     ws = null;
     myId = null;
+    started = false;
     remotes.clear();
     status = 'off';
   }
@@ -188,6 +198,12 @@ const NET = (function () {
     },
     get room() {
       return roomName;
+    },
+    get started() {
+      return started;
+    },
+    get need() {
+      return needCount;
     },
   };
 })();

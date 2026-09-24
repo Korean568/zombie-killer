@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 38; // 로드된 번들 확인용
+window.GAME_BUILD = 40; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -63,7 +63,6 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.traveling-resolution.workers
   /* ---------------- 설정 ---------------- */
   const settings = {
     difficulty: 'normal',
-    room: 'main',
     quality: 'medium',
     sensitivity: 1.0,
     volume: 0.7,
@@ -1875,7 +1874,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       멀티플레이 접속.
       서버 주소가 없으면 조용히 오프라인(전부 봇)으로 간다.
     */
-    NET.connect(settings.room, function () {
+    NET.connect('main', function () {
       updateNetBadge();
       updateWaitScreen();
     });
@@ -2037,7 +2036,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     $('#wait-need').textContent = MIN_PLAYERS;
     $('#wait-fill').style.transform =
       'scaleX(' + clamp(now / MIN_PLAYERS, 0, 1).toFixed(3) + ')';
-    $('#wait-room').textContent = NET.room || settings.room || '-';
+    $('#wait-room').textContent = NET.room || '-';
     $('#wait-name').textContent = NET.myName || '-';
 
     const msg = $('#wait-msg');
@@ -2055,10 +2054,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         return;
       }
     } else {
-      msg.textContent = '다른 플레이어를 기다리는 중';
+      msg.textContent = NET.started
+        ? '진행 중인 학교에 합류합니다'
+        : '다른 플레이어를 기다리는 중';
     }
 
-    if (now >= MIN_PLAYERS) beginMatch();
+    // 이미 진행 중인 곳이면 기다리지 않고 바로 합류한다
+    if (NET.started || now >= MIN_PLAYERS) beginMatch();
   }
 
   function beginMatch() {
@@ -2281,19 +2283,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       settings.volume = vol.value / 100;
       $('#vol-val').textContent = vol.value + '%';
       SFX.setVolume(settings.volume);
-    });
-
-    /* 방 코드 (이름은 접속 시 서버가 '플레이어 001' 형태로 배정한다) */
-    const roomEl = $('#roomcode');
-    try {
-      roomEl.value = localStorage.getItem('zk_room') || '';
-    } catch (e) {
-      /* 저장소를 못 쓰는 환경 */
-    }
-    settings.room = roomEl.value || 'main';
-    roomEl.addEventListener('input', function () {
-      settings.room = roomEl.value || 'main';
-      try { localStorage.setItem('zk_room', roomEl.value); } catch (e) {}
     });
 
     $('#btn-solo').addEventListener('click', beginMatch);
