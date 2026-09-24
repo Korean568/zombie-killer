@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 23; // 로드된 번들 확인용
+window.GAME_BUILD = 24; // 로드된 번들 확인용
 
 (function () {
   'use strict';
