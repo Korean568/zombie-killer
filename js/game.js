@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 30; // 로드된 번들 확인용
+window.GAME_BUILD = 32; // 로드된 번들 확인용
 
 (function () {
   'use strict';
@@ -1053,7 +1053,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     // 앞쪽 몇 명만 실제 3D 봇으로 내보낸다
     const live = Math.min(MAX_LIVE_BOTS, total - 1);
     for (let i = 0; i < live; i++) {
-      const spot = SCHOOL.randomSpawnCell(player.pos, 6, flowField);
+      // 맵 전체(176x64m)에 흩뿌리면 안개 너머라 영영 못 만난다.
+      // 매치 시작처럼 플레이어 주변에 배치한다.
+      const spot =
+        SCHOOL.randomSpawnCell(player.pos, 6, flowField, 26) ||
+        SCHOOL.randomSpawnCell(player.pos, 6, flowField, 60) ||
+        SCHOOL.randomSpawnCell(player.pos, 6, flowField);
       if (!spot) continue;
       const b = new Bot({ x: spot.x, z: spot.z }, randInt(0, 3), roster[i + 1].name);
       b.addTo(scene);
@@ -2385,6 +2390,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       get viewModel() { return viewModel; },
       get player() { return player; },
       get allies() { return allies; },
+      get bots() { return bots; },
+      get roster() { return roster; },
+      setupMatch: function(){ return setupMatch(); },
       get zombies() { return zombies; },
       get lockers() { return lockers; },
       get roomStates() { return roomStates; },

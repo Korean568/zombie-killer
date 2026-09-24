@@ -60,7 +60,8 @@ class Bot extends Ally {
       const x = SCHOOL.wx(c[0]);
       const z = SCHOOL.wz(c[1]);
       if (SCHOOL.navBlocked[c[1] * SCHOOL.MAP_W + c[0]]) continue;
-      if (Math.hypot(x - this.pos.x, z - this.pos.z) < 8) continue;
+      const dd = Math.hypot(x - this.pos.x, z - this.pos.z);
+      if (dd < 8 || dd > 45) continue; // 너무 멀리 가면 영영 안 돌아온다
       this.dest = { x: x, z: z };
       this.destTimer = rand(12, 26);
       return;

@@ -982,7 +982,8 @@ const SCHOOL = (function () {
     }
   }
 
-  function randomSpawnCell(playerPos, minDist, flowDist) {
+  /* maxDist 를 주면 그 반경 안에서만 고른다 (안 주면 맵 전체) */
+  function randomSpawnCell(playerPos, minDist, flowDist, maxDist) {
     const cands = [];
     for (let i = 0; i < navCells.length; i++) {
       const c = navCells[i];
@@ -990,6 +991,7 @@ const SCHOOL = (function () {
       const z = wz(c[1]);
       const d = Math.hypot(x - playerPos.x, z - playerPos.z);
       if (d < minDist) continue;
+      if (maxDist && d > maxDist) continue;
       if (flowDist && flowDist[idx(c[0], c[1])] < 0) continue;
       cands.push(c);
     }
