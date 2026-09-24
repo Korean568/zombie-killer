@@ -2,14 +2,14 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 40; // 로드된 번들 확인용
+window.GAME_BUILD = 41; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
   server/ 를 배포한 뒤 여기에 wss:// 주소를 넣으면 진짜 대전이 된다.
   비워 두면 전부 봇으로 진행한다. (?server=wss://... 로도 덮어쓸 수 있다)
 */
-const MATCH_SERVER_URL = 'wss://zombie-killer-match.traveling-resolution.workers.dev';
+const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.dev';
 
 (function () {
   'use strict';
