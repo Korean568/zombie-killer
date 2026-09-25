@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 43; // 로드된 번들 확인용
+window.GAME_BUILD = 44; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -726,9 +726,17 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         .copy(origin)
         .addScaledVector(dir, bestT);
       const dmg = def.damage * (bestHead ? def.headMult : 1);
-      const killed = best.hurt(dmg, bestHead);
       bloodBurst(point, dir, bestHead ? 16 : 9);
-      if (bestHead && killed) stats.headshots++;
+      if (bestHead) stats.headshots++;
+
+      if (best.netId && NET.status === 'online') {
+        // 좀비 체력은 서버가 관리한다. 맞췄다고 알리기만 한다.
+        best.flashTimer = 0.12;
+        NET.sendHit(best.netId, dmg, bestHead);
+        return { zombie: best, killed: false, head: bestHead };
+      }
+
+      const killed = best.hurt(dmg, bestHead);
       if (killed) onZombieKilled(best, bestHead, point);
       return { zombie: best, killed, head: bestHead };
     }
@@ -1047,6 +1055,83 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   /* =========================================================
      매치 / 점수판
      ========================================================= */
+  /* =========================================================
+     서버가 계산한 좀비를 화면에 반영
+     ========================================================= */
+  const netZombies = new Map(); // 서버 id -> Zombie
+
+  function syncNetZombies(dt) {
+    if (NET.status !== 'online') return;
+    const snap = NET.zombies;
+    const seen = new Set();
+
+    for (let i = 0; i < snap.length; i++) {
+      const s = snap[i];           // [id, x, z, facing, typeIdx]
+      const id = s[0];
+      seen.add(id);
+      let z = netZombies.get(id);
+      if (!z) {
+        const key = ['walker', 'runner', 'brute'][s[4]] || 'walker';
+        z = new Zombie(key, { x: s[1], z: s[2] }, { hp: 1, speed: 1, dmg: 1 });
+        z.netId = id;
+        z.addTo(scene);
+        netZombies.set(id, z);
+        zombies.push(z);
+      }
+      z.netApply(s[1], s[2], s[3]);
+    }
+
+    // 스냅샷에서 빠졌는데 아직 살아 있는 것 = 서버에서 사라진 것
+    netZombies.forEach(function (z, id) {
+      if (!seen.has(id) && !z.dead) z.die();
+    });
+
+    for (let i = zombies.length - 1; i >= 0; i--) {
+      const z = zombies[i];
+      z.netUpdate(dt);
+      if (z.removeMe) {
+        z.removeFrom(scene);
+        if (z.netId) netZombies.delete(z.netId);
+        zombies.splice(i, 1);
+      }
+    }
+  }
+
+  function clearNetZombies() {
+    netZombies.clear();
+  }
+
+  /* 서버가 보내는 좀비 이벤트 */
+  function bindNetEvents() {
+    NET.on('zdie', function (m) {
+      const z = netZombies.get(m.id);
+      const pt = new THREE.Vector3(m.x, 1.1, m.z);
+      if (z && !z.dead) z.die();
+      bloodBurst(pt, { x: 0, y: 1, z: 0 }, 14);
+      SFX.zombieDeath(pt.distanceTo(player.pos));
+      if (m.by === NET.myId) {
+        stats.kills++;
+        killPoints += 1 + (m.h ? 1 : 0);
+        showHitmarker(true);
+        updateHud();
+      }
+    });
+
+    NET.on('room', function (m) {
+      SFX.alarm();
+      announce(m.gym ? '체육관' : m.id + '반 교실', m.n + '마리가 깨어났다');
+      SCHOOL.openRoomDoors(m.id);
+    });
+
+    NET.on('hurt', function (d) {
+      damagePlayer(d, null);
+    });
+
+    NET.on('cleared', function () {
+      winGame();
+    });
+  }
+
   /* 매치 명단은 실제 접속자만으로 구성한다. 봇은 없다. */
   function setupMatch() {
     roster = [{ name: NET.myName || '나', kills: 0, me: true }];
@@ -1364,10 +1449,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
   }
 
-  function checkVictory() {
+  function winGame() {
     if (victory) return;
-    if (roomsLeft() > 0) return;
-    if (aliveZombieCount() > 0) return;
     victory = true;
     state = 'dead'; // 조작을 멈춘다
     SFX.waveClear();
@@ -1384,6 +1467,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       (stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0) + '%';
     $('#g-time').textContent = fmtTime(stats.time);
     setTimeout(function () { showScreen('gameover'); }, 700);
+  }
+
+  /* 오프라인(혼자) 진행일 때만 쓰는 판정 */
+  function checkVictory() {
+    if (NET.status === 'online') return;
+    if (victory || roomsLeft() > 0 || aliveZombieCount() > 0) return;
+    winGame();
   }
 
   /* =========================================================
@@ -1778,8 +1868,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function updateHud() {
-    setText(el.wave, 'wave', String(totalRemaining()));
-    setText(el.remaining, 'remain', String(roomsLeft()));
+    const online = NET.status === 'online';
+    setText(el.wave, 'wave', String(online ? NET.zombieRemain : totalRemaining()));
+    setText(el.remaining, 'remain', String(online ? NET.roomsLeft : roomsLeft()));
     setText(el.kills, 'kills', '처치 ' + stats.kills + ' · 생존 ' + fmtTime(stats.time));
 
     const hpR = clamp(player.hp / player.maxHp, 0, 1);
@@ -1897,6 +1988,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     clearAllies();
     clearRemotePlayers();
+    clearNetZombies();
     killPoints = 0;
     shopOpen = false;
     el.shop.classList.remove('show');
@@ -2394,8 +2486,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         }
       }
 
-      // 방에 들어서면 그 방 좀비가 깨어난다
-      checkRoomEntry();
+      // 방과 좀비는 서버가 관리한다 (오프라인이면 예전처럼 직접)
+      if (NET.status === 'online') syncNetZombies(dt);
+      else checkRoomEntry();
       updateLockerPrompt();
       SCHOOL.updateDoors(dt);
 
@@ -2408,6 +2501,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         y: +player.yaw.toFixed(3),
         h: Math.ceil(player.hp),
         k: stats.kills,
+        d: player.hp <= 0 ? 1 : 0,
       });
       updateTracers(dt);
       updatePickups(dt);
@@ -2531,6 +2625,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
 
     bindInput();
+    bindNetEvents();
     // 나중에 터치로 켜지면 플레이 중일 때 바로 UI를 띄운다
     TOUCH.init(function () {
       TOUCH.setVisible(state === 'playing');

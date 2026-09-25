@@ -26,6 +26,12 @@ const NET = (function () {
   let onRosterChange = null;
   let lastError = '';
 
+  /* 서버가 계산한 좀비 */
+  let zombieSnap = [];
+  let zombieRemain = 0;
+  let roomsLeft = 9;
+  let handlers = {}; // zdie / room / hurt / cleared
+
   function configure(url) {
     SERVER = (url || '').trim();
   }
@@ -90,6 +96,7 @@ const NET = (function () {
         myName = m.name || '';
         started = !!m.started;
         if (m.need) needCount = m.need;
+        if (m.zs) zombieSnap = m.zs;
         remotes.clear();
         (m.players || []).forEach(function (p) {
           if (p.id !== myId) remotes.set(p.id, p);
@@ -112,6 +119,18 @@ const NET = (function () {
           if (!seen.has(id)) remotes.delete(id);
         }
         if (onRosterChange) onRosterChange();
+      } else if (m.t === 'z') {
+        zombieSnap = m.zs || [];
+        zombieRemain = m.remain || 0;
+        roomsLeft = m.rooms === undefined ? roomsLeft : m.rooms;
+      } else if (m.t === 'zdie') {
+        if (handlers.zdie) handlers.zdie(m);
+      } else if (m.t === 'room') {
+        if (handlers.room) handlers.room(m);
+      } else if (m.t === 'hurt') {
+        if (handlers.hurt) handlers.hurt(m.d || 0);
+      } else if (m.t === 'cleared') {
+        if (handlers.cleared) handlers.cleared();
       } else if (m.t === 'leave') {
         remotes.delete(m.id);
         if (onRosterChange) onRosterChange();
@@ -158,6 +177,20 @@ const NET = (function () {
     }
   }
 
+  /* 좀비를 맞췄다고 서버에 알린다 */
+  function sendHit(zid, dmg, head) {
+    if (status !== 'online' || !ws || ws.readyState !== 1) return;
+    try {
+      ws.send(JSON.stringify({ t: 'hit', id: zid, d: Math.round(dmg), h: head ? 1 : 0 }));
+    } catch (e) {
+      /* 무시 */
+    }
+  }
+
+  function on(name, fn) {
+    handlers[name] = fn;
+  }
+
   function sendKills(n) {
     if (status !== 'online' || !ws || ws.readyState !== 1) return;
     try {
@@ -177,7 +210,18 @@ const NET = (function () {
     disconnect,
     update,
     sendKills,
+    sendHit,
+    on,
     list,
+    get zombies() {
+      return zombieSnap;
+    },
+    get zombieRemain() {
+      return zombieRemain;
+    },
+    get roomsLeft() {
+      return roomsLeft;
+    },
     get status() {
       return status;
     },

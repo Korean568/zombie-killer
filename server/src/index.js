@@ -8,7 +8,10 @@
    (권위 서버가 아니라 단순 중계다 - 발표용 게임이라 치팅 방지는 범위 밖)
    ========================================================= */
 
+import { World } from './world.js';
+
 const TICK_MS = 50; // 20Hz 로 상태를 뿌린다
+const ZOMBIE_HZ = 10; // 좀비는 10Hz 로 계산해서 보낸다
 const IDLE_MS = 15000; // 15초간 소식 없으면 끊어진 것으로 본다
 const MAX_PER_ROOM = 100; // 한 방 정원. 차면 다음 방이 열린다
 const MAX_SHARDS = 50; // 같은 이름으로 열 수 있는 방 개수
@@ -23,6 +26,11 @@ export class MatchRoom {
     this.usedNumbers = new Set(); // 방 안에서 겹치지 않는 플레이어 번호
     this.started = false;         // 한 번 시작하면 이후 들어오는 사람은 바로 합류한다
     this.timer = null;
+
+    /* 좀비는 서버가 계산한다. 모두가 같은 좀비를 본다. */
+    this.world = new World();
+    this.lastTick = Date.now();
+    this.zAccum = 0;
   }
 
   async fetch(request) {
@@ -66,6 +74,8 @@ export class MatchRoom {
       size: this.players.size,
       started: this.started,
       need: MIN_TO_START,
+      rooms: this.world.roomState.map((st) => (st.triggered ? 1 : 0)),
+      zs: this.world.snapshot(),
     });
     this.broadcast({ t: 'join', id, name }, id);
     this.ensureTimer();
@@ -82,11 +92,37 @@ export class MatchRoom {
       if (msg.t === 'state') {
         // 위치/자세/체력 등 한 덩어리
         entry.state = msg.s;
+        entry.dead = !!msg.s.d;
       } else if (msg.t === 'kill') {
         entry.kills = msg.n | 0;
       } else if (msg.t === 'shot') {
         // 총격은 즉시 중계해서 반응이 늦지 않게
         this.broadcast({ t: 'shot', id, a: msg.a, b: msg.b }, id);
+      } else if (msg.t === 'hit') {
+        /*
+          맞췄다는 판정은 클라이언트가 한다(반응 속도 때문).
+          서버는 거리만 대충 확인하고 피해를 적용한다.
+        */
+        const z = this.world.zombies.find((q) => q.id === msg.id && !q.dead);
+        if (z && entry.state) {
+          const d = Math.hypot(entry.state.x - z.x, entry.state.z - z.z);
+          if (d < 160) {
+            const killed = this.world.hurt(msg.id, Math.max(0, Math.min(600, msg.d | 0)));
+            if (killed) {
+              entry.kills++;
+              this.broadcast({
+                t: 'zdie',
+                id: killed.id,
+                x: Math.round(killed.x * 10) / 10,
+                z: Math.round(killed.z * 10) / 10,
+                by: id,
+                h: msg.h ? 1 : 0,
+              });
+            }
+          }
+        }
+      } else if (msg.t === 'respawn') {
+        entry.dead = false;
       } else if (msg.t === 'ping') {
         send(server, { t: 'pong', at: msg.at });
       }
@@ -161,6 +197,36 @@ export class MatchRoom {
         this.started = true;
         this.broadcast({ t: 'start' });
       }
+
+      /* ---- 좀비 시뮬레이션 ---- */
+      const dt = Math.min(0.2, (now - this.lastTick) / 1000);
+      this.lastTick = now;
+
+      if (this.started) {
+        const list = Array.from(this.players.values());
+
+        this.world.checkRooms(list, (room, spawned) => {
+          this.broadcast({ t: 'room', id: room.id, n: spawned, gym: room.gym ? 1 : 0 });
+        });
+
+        const result = this.world.update(dt, list, (target, dmg) => {
+          send(target.ws, { t: 'hurt', d: dmg });
+        });
+
+        if (result === 'cleared') this.broadcast({ t: 'cleared' });
+
+        this.zAccum += dt;
+        if (this.zAccum >= 1 / ZOMBIE_HZ) {
+          this.zAccum = 0;
+          this.broadcast({
+            t: 'z',
+            zs: this.world.snapshot(),
+            remain: this.world.aliveCount() + this.world.pendingCount(),
+            rooms: this.world.roomsLeft(),
+          });
+        }
+      }
+
       this.broadcast({
         t: 'sync',
         players: this.roster(),

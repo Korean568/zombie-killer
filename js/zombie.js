@@ -207,6 +207,50 @@ class Zombie {
     this.fallSpin = rand(-0.5, 0.5);
   }
 
+  /*
+    서버 주도 모드.
+    AI 를 돌리지 않고 서버가 준 좌표/방향만 따라간다.
+    (10Hz 로 오므로 부드럽게 보간한다)
+  */
+  netApply(x, z, f) {
+    this.netX = x;
+    this.netZ = z;
+    this.netF = f;
+  }
+
+  netUpdate(dt) {
+    if (this.dead) {
+      this.update(dt, null);
+      return;
+    }
+    this.animTime += dt;
+    if (this.flashTimer > 0) {
+      this.flashTimer -= dt;
+      const ff = clamp(this.flashTimer / 0.12, 0, 1);
+      this.material.emissive.setRGB(ff * 0.6, 0, 0);
+    }
+
+    const px = this.pos.x;
+    const pz = this.pos.z;
+    if (this.netX !== undefined) {
+      this.pos.x = dampen(this.pos.x, this.netX, 14, dt);
+      this.pos.z = dampen(this.pos.z, this.netZ, 14, dt);
+    }
+    this.group.position.set(this.pos.x, this.group.position.y, this.pos.z);
+
+    const moved = Math.hypot(this.pos.x - px, this.pos.z - pz);
+    if (this.netF !== undefined) {
+      let diff = this.netF - this.facing;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      this.facing += diff * clamp(10 * dt, 0, 1);
+      this.group.rotation.y = this.facing;
+    }
+
+    if (moved > 0.004) this._animateWalk(this.speed);
+    else this._animateAttack();
+  }
+
   /* ---------- 업데이트 ---------- */
   update(dt, ctx) {
     this.animTime += dt;
