@@ -12,12 +12,12 @@
   부하(올리브색 전투복)와 한눈에 구분되도록 남색 정복 + 금색 견장/계급장으로 만든다.
 */
 const PlayerAssets = (function () {
-  const NAVY = 0x1b2440;   // 정복 상의
-  const TROUSER = 0x2b3558; // 정복 바지
+  const NAVY = 0x0b1228;   // 정복 상의 (거의 남색에 가까운 짙은 색)
+  const TROUSER = 0x141d3a; // 정복 바지
   const GOLD = 0xc9a227;   // 견장 / 계급장 / 벨트
   const SKIN = 0x7a6450;
   const BLACK = 0x14161a;  // 베레모 / 구두
-  const SHIRT = 0xb8c2cc;  // 셔츠
+  const SHIRT = 0x8a939e;  // 셔츠
   let cached = null;
 
   function parts() {
