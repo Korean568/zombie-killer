@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 45; // 로드된 번들 확인용
+window.GAME_BUILD = 50; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -77,7 +77,7 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.
   /* ---------------- 코어 ---------------- */
   let renderer, scene, camera;
   let viewScene, viewCamera, viewKey, viewFlash;
-  let flashlight, muzzleLight;
+  let flashlight, muzzleLight, hemiLight, moonLight;
   let clock;
   let state = 'menu'; // menu | playing | paused | dead
   let built = false;
@@ -217,9 +217,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     // 기본 환경광 — 폐교는 어두워야 하므로 최소한만
     scene.add(new THREE.AmbientLight(0x0c1420, 0.28));
-    const hemi = new THREE.HemisphereLight(0x1b2836, 0x070806, 0.16);
+    hemiLight = new THREE.HemisphereLight(0x1b2836, 0x070806, 0.16);
+    const hemi = hemiLight;
     scene.add(hemi);
-    const moon = new THREE.DirectionalLight(0x4a668f, 0.1);
+    moonLight = new THREE.DirectionalLight(0x4a668f, 0.1);
+    const moon = moonLight;
     moon.position.set(-40, 60, -30);
     scene.add(moon);
 
@@ -317,7 +319,15 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, cap));
     flashlight.castShadow = q === 'high' && !TOUCH.enabled;
     flashlight.shadow.mapSize.set(q === 'high' ? 1024 : 512, q === 'high' ? 1024 : 512);
-    scene.fog.density = q === 'low' ? 0.03 : 0.024;
+    scene.fog.density = q === 'low' ? 0.034 : 0.024;
+    // 저사양에서는 더 과감하게 줄인다
+    LOD_NEAR = q === 'low' ? 9 : q === 'high' ? 22 : 16;
+    LOD_FAR = q === 'low' ? 34 : q === 'high' ? 60 : 52;
+    // 점광원 개수가 픽셀 비용을 좌우한다
+    SCHOOL.setLightBudget(q === 'low' ? 1 : q === 'high' ? 6 : 4);
+    // 저사양에서는 보조 조명도 끈다
+    if (hemiLight) hemiLight.visible = q !== 'low';
+    if (moonLight) moonLight.visible = q !== 'low';
     onResize();
   }
 
@@ -1059,6 +1069,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
      서버가 계산한 좀비를 화면에 반영
      ========================================================= */
   const netZombies = new Map(); // 서버 id -> Zombie
+  /* 이 거리부터 팔다리를 끄고, 이 거리부터는 아예 그리지 않는다 */
+  let LOD_NEAR = 16;
+  let LOD_FAR = 52;
 
   function syncNetZombies(dt) {
     if (NET.status !== 'online') return;
@@ -1086,9 +1099,15 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       if (!seen.has(id) && !z.dead) z.die();
     });
 
+    const near2 = LOD_NEAR * LOD_NEAR;
+    const far2 = LOD_FAR * LOD_FAR;
     for (let i = zombies.length - 1; i >= 0; i--) {
       const z = zombies[i];
-      z.netUpdate(dt);
+      const dx = z.pos.x - player.pos.x;
+      const dz = z.pos.z - player.pos.z;
+      const d2 = dx * dx + dz * dz;
+      z.setDetail(d2 > far2 ? 2 : d2 > near2 ? 1 : 0);
+      if (d2 <= far2) z.netUpdate(dt);
       if (z.removeMe) {
         z.removeFrom(scene);
         if (z.netId) netZombies.delete(z.netId);
@@ -1129,6 +1148,16 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     NET.on('cleared', function () {
       winGame();
+    });
+
+    NET.on('reset', function () {
+      // 서버가 학교를 새로 채웠다. 화면의 좀비를 비우고 다시 시작한다.
+      zombies.forEach(function (z) { z.removeFrom(scene); });
+      zombies.length = 0;
+      clearNetZombies();
+      SCHOOL.closeAllDoors();
+      victory = false;
+      toast('학교가 다시 채워졌다', true);
     });
   }
 
@@ -1997,6 +2026,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     clearedRooms = 0;
     victory = false;
     $('#gameover').querySelector('h1').textContent = '사 망';
+    SCHOOL.closeAllDoors();
     setupRooms();
     setupLockers();
     nearLocker = null;
@@ -2641,6 +2671,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       scene, camera, viewRoot,
       get viewModel() { return viewModel; },
       get player() { return player; },
+      renderer: renderer,
       get allies() { return allies; },
       get roster() { return roster; },
       setupMatch: function(){ return setupMatch(); },

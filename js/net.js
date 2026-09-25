@@ -129,6 +129,9 @@ const NET = (function () {
         if (handlers.room) handlers.room(m);
       } else if (m.t === 'hurt') {
         if (handlers.hurt) handlers.hurt(m.d || 0);
+      } else if (m.t === 'reset') {
+        zombieSnap = [];
+        if (handlers.reset) handlers.reset();
       } else if (m.t === 'cleared') {
         if (handlers.cleared) handlers.cleared();
       } else if (m.t === 'leave') {

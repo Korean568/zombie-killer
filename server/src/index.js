@@ -31,6 +31,7 @@ export class MatchRoom {
     this.world = new World();
     this.lastTick = Date.now();
     this.zAccum = 0;
+    this.resetAt = 0;
   }
 
   async fetch(request) {
@@ -199,7 +200,10 @@ export class MatchRoom {
         }
       }
       if (!this.players.size) {
-        this.started = false; // 방이 비면 처음부터 다시 모은다
+        // 방이 비면 처음부터 다시 모으고 학교도 새로 채운다
+        this.started = false;
+        this.world = new World();
+        this.resetAt = 0;
         clearInterval(this.timer);
         this.timer = null;
         return;
@@ -224,7 +228,16 @@ export class MatchRoom {
           send(target.ws, { t: 'hurt', d: dmg });
         });
 
-        if (result === 'cleared') this.broadcast({ t: 'cleared' });
+        if (result === 'cleared' && !this.resetAt) {
+          this.broadcast({ t: 'cleared' });
+          // 다 비운 뒤에는 잠시 뒤 학교를 새로 채워 계속 할 수 있게 한다
+          this.resetAt = now + 20000;
+        }
+        if (this.resetAt && now >= this.resetAt) {
+          this.resetAt = 0;
+          this.world = new World();
+          this.broadcast({ t: 'reset' });
+        }
 
         this.zAccum += dt;
         if (this.zAccum >= 1 / ZOMBIE_HZ) {

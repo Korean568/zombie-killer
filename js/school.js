@@ -42,7 +42,10 @@ const SCHOOL = (function () {
 
   let root = null;
   let lightPool = [];
+  let lightBudget = 6;
   let tubeMesh = null;
+  let doorWood = null;
+  let doorGlass = null;
   let tubeColorNeedsUpdate = false;
   let sortTimer = 0;
   let sortedFixtures = [];
@@ -473,6 +476,7 @@ const SCHOOL = (function () {
       return true;
     };
 
+    const frameTr = [];
     rooms.forEach((r) => {
       if (r.type !== 'class') return;
       const zc = (wz(r.y0) + wz(r.y1)) / 2;
@@ -491,16 +495,13 @@ const SCHOOL = (function () {
       }
 
       const m = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 2.6), mat);
-      const frame = new THREE.Mesh(new THREE.BoxGeometry(7.7, 3.1, 0.14), frameMat);
       const push = ry > 0 ? 0.03 : -0.03;
       m.position.set(xw + push, 2.2, zc);
       m.rotation.y = ry;
-      frame.position.set(xw, 2.2, zc);
-      frame.rotation.y = ry;
-      frame.receiveShadow = true;
-      scene.add(frame);
       scene.add(m);
+      frameTr.push(MAT(xw, 2.2, zc, 0, ry, 0));
     });
+    instanced(scene, new THREE.BoxGeometry(7.7, 3.1, 0.14), frameMat, frameTr);
   }
 
   /* 창문 */
@@ -592,27 +593,24 @@ const SCHOOL = (function () {
 
     // 낡은 체조 매트 (높이 22cm 라 걸려 넘어지지 않도록 콜라이더는 두지 않는다)
     const matMat = new THREE.MeshStandardMaterial({ color: 0x2d4a6b, roughness: 0.95 });
+    const matTr = [];
     for (let i = 0; i < 7; i++) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.22, 1.3), matMat);
-      m.position.set(gxc + rand(-14, 14), 0.11, rand(wz(GYM_Y[0]) + 4, wz(GYM_Y[1]) - 4));
-      m.rotation.y = rand(0, 6.28);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      scene.add(m);
+      matTr.push(MAT(gxc + rand(-14, 14), 0.11, rand(wz(GYM_Y[0]) + 4, wz(GYM_Y[1]) - 4), 0, rand(0, 6.28), 0));
     }
+    const matIm = instanced(scene, new THREE.BoxGeometry(2.4, 0.22, 1.3), matMat, matTr);
+    if (matIm) matIm.castShadow = false;
 
     // 접이식 의자 더미
     const stackMat = new THREE.MeshStandardMaterial({ color: 0x4b4034, roughness: 0.9 });
+    const stackTr = [];
     for (let i = 0; i < 4; i++) {
-      const g = new THREE.Mesh(new THREE.BoxGeometry(1.6, rand(0.8, 1.6), 0.9), stackMat);
+      const h = rand(0.8, 1.6);
       const sx = wx(GYM_X[1]) - rand(1, 4);
       const sz = rand(wz(GYM_Y[0]) + 6, wz(GYM_Y[1]) - 6);
-      g.position.set(sx, g.geometry.parameters.height / 2, sz);
-      g.rotation.y = rand(-0.3, 0.3);
-      g.castShadow = true;
-      scene.add(g);
+      stackTr.push(MAT(sx, h / 2, sz, 0, rand(-0.3, 0.3), 0, 1, h / 1.2, 1));
       addPropCollider(sx, sz, 0.9, 0.55, true);
     }
+    instanced(scene, new THREE.BoxGeometry(1.6, 1.2, 0.9), stackMat, stackTr);
   }
 
   /* 바닥 혈흔 */
@@ -668,72 +666,84 @@ const SCHOOL = (function () {
     각 짝은 바깥쪽 모서리에 경첩(pivot)이 있고 그 축으로 회전한다.
   */
   function buildDoors(scene) {
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0x6b5533, roughness: 0.88 });
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x3a3229, roughness: 0.9 });
+    /*
+      문은 36짝이나 된다. 짝마다 메시를 따로 두면 드로우콜이 140개를 넘어
+      저사양 기기에서 이것만으로 프레임이 무너진다.
+      문짝 전체를 InstancedMesh 두 개(나무판 / 유리창)로 묶고,
+      열릴 때마다 인스턴스 행렬만 갱신한다. -> 드로우콜 2개
+    */
+    const W = TILE - 0.12;
+    const H = 3.1;
+
+    const woodGeo = new THREE.BoxGeometry(W, H, 0.1);
+    const glassGeo = new THREE.BoxGeometry(W * 0.6, 0.95, 0.12);
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b5533, roughness: 0.88 });
     const glassMat = new THREE.MeshStandardMaterial({
-      color: 0x8fa6ae, roughness: 0.35, metalness: 0.1,
-      transparent: true, opacity: 0.35,
+      color: 0x8fa6ae, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.35,
     });
-    const knobMat = new THREE.MeshStandardMaterial({ color: 0xb9a15c, roughness: 0.4, metalness: 0.7 });
 
-    const W = TILE - 0.12;   // 문짝 폭
-    const H = 3.1;           // 문 높이
+    const defs = [];
+    const add = (hingeX, hingeZ, axisZ, dir, roomId) => {
+      defs.push({ hx: hingeX, hz: hingeZ, base: axisZ ? Math.PI / 2 : 0, dir: dir, roomId: roomId });
+    };
 
-    function panel(hingeX, hingeZ, axis, dir, roomId) {
-      const pivot = new THREE.Group();
-      pivot.position.set(hingeX, 0, hingeZ);
-      // axis 'x' = 문이 X축을 따라 놓임(남북 벽), 'z' = Z축을 따라 놓임(동서 벽)
-      const axisZ = axis === 'z';
-      if (axisZ) pivot.rotation.y = Math.PI / 2;
-
-      const g = new THREE.Group();
-      g.position.x = (W / 2) * dir;
-      pivot.add(g);
-
-      const body = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.1), panelMat);
-      body.position.y = H / 2;
-      body.castShadow = true;
-      g.add(body);
-
-      // 위쪽 유리창
-      const glass = new THREE.Mesh(new THREE.BoxGeometry(W * 0.6, 0.95, 0.12), glassMat);
-      glass.position.set(0, H * 0.72, 0);
-      g.add(glass);
-
-      // 창틀
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(W * 0.64, 0.07, 0.14), frameMat);
-      bar.position.set(0, H * 0.72, 0);
-      g.add(bar);
-
-      // 손잡이 (경첩 반대쪽)
-      const knob = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.26), knobMat);
-      knob.position.set(-(W / 2 - 0.22) * dir, 1.05, 0);
-      g.add(knob);
-
-      scene.add(pivot);
-      doors.push({ pivot: pivot, roomId: roomId, angle: 0, target: 0, dir: dir, axisZ: axisZ });
-    }
-
-    // 교실: 위쪽 벽(y=6) / 아래쪽 벽(y=9)
     ROOM_X.forEach(function (rx, i) {
       const dx = rx[0] + 3;
       const xL = wx(dx) - TILE / 2;
       const xR = wx(dx + 1) + TILE / 2;
-      // 위쪽 교실 문
-      panel(xL, wz(6), 'x', 1, i + 1);
-      panel(xR, wz(6), 'x', -1, i + 1);
-      // 아래쪽 교실 문
-      panel(xL, wz(9), 'x', 1, i + 5);
-      panel(xR, wz(9), 'x', -1, i + 5);
+      add(xL, wz(6), false, 1, i + 1);
+      add(xR, wz(6), false, -1, i + 1);
+      add(xL, wz(9), false, 1, i + 5);
+      add(xR, wz(9), false, -1, i + 5);
+    });
+    [[7, 8], [12, 13]].forEach(function (pair) {
+      add(wx(32), wz(pair[0]) - TILE / 2, true, -1, 9);
+      add(wx(32), wz(pair[1]) + TILE / 2, true, 1, 9);
     });
 
-    // 체육관: 세로 벽(x=32) 두 곳
-    [[7, 8], [12, 13]].forEach(function (pair) {
-      const zT = wz(pair[0]) - TILE / 2;
-      const zB = wz(pair[1]) + TILE / 2;
-      panel(wx(32), zT, 'z', -1, 9);
-      panel(wx(32), zB, 'z', 1, 9);
+    doorWood = new THREE.InstancedMesh(woodGeo, woodMat, defs.length);
+    doorGlass = new THREE.InstancedMesh(glassGeo, glassMat, defs.length);
+    doorWood.castShadow = true;
+    doorWood.frustumCulled = false;
+    doorGlass.frustumCulled = false;
+    scene.add(doorWood);
+    scene.add(doorGlass);
+
+    defs.forEach(function (dfn, i) {
+      doors.push({
+        i: i, hx: dfn.hx, hz: dfn.hz, base: dfn.base, dir: dfn.dir,
+        roomId: dfn.roomId, angle: 0, target: 0, W: W, H: H,
+      });
+      writeDoor(doors[doors.length - 1]);
     });
+    doorWood.instanceMatrix.needsUpdate = true;
+    doorGlass.instanceMatrix.needsUpdate = true;
+  }
+
+  /* 경첩을 기준으로 문짝 한 짝의 행렬을 다시 쓴다 */
+  const _dq = new THREE.Quaternion();
+  const _de = new THREE.Euler();
+  const _dm = new THREE.Matrix4();
+  const _dp = new THREE.Vector3();
+  const _ds = new THREE.Vector3(1, 1, 1);
+  const _doff = new THREE.Vector3();
+
+  function writeDoor(d) {
+    const ang = d.base + d.angle;
+    _de.set(0, ang, 0);
+    _dq.setFromEuler(_de);
+
+    // 나무판: 경첩에서 폭의 절반만큼 떨어진 곳이 중심
+    _doff.set((d.W / 2) * d.dir, d.H / 2, 0).applyQuaternion(_dq);
+    _dp.set(d.hx + _doff.x, _doff.y, d.hz + _doff.z);
+    _dm.compose(_dp, _dq, _ds);
+    doorWood.setMatrixAt(d.i, _dm);
+
+    // 유리창: 같은 축, 높이만 다름
+    _doff.set((d.W / 2) * d.dir, d.H * 0.72, 0).applyQuaternion(_dq);
+    _dp.set(d.hx + _doff.x, _doff.y, d.hz + _doff.z);
+    _dm.compose(_dp, _dq, _ds);
+    doorGlass.setMatrixAt(d.i, _dm);
   }
 
   /* 해당 방의 문을 연다 */
@@ -745,12 +755,29 @@ const SCHOOL = (function () {
     }
   }
 
+  /* 다시 시작할 때 문을 전부 닫아 둔다 (맵은 한 번만 만들어지므로 상태가 남는다) */
+  function closeAllDoors() {
+    for (let i = 0; i < doors.length; i++) {
+      doors[i].angle = 0;
+      doors[i].target = 0;
+      writeDoor(doors[i]);
+    }
+    if (doorWood) doorWood.instanceMatrix.needsUpdate = true;
+    if (doorGlass) doorGlass.instanceMatrix.needsUpdate = true;
+  }
+
   function updateDoors(dt) {
+    let dirty = false;
     for (let i = 0; i < doors.length; i++) {
       const d = doors[i];
       if (Math.abs(d.angle - d.target) < 0.002) continue;
       d.angle += (d.target - d.angle) * clamp(3.2 * dt, 0, 1);
-      d.pivot.rotation.y = (d.axisZ ? Math.PI / 2 : 0) + d.angle;
+      writeDoor(d);
+      dirty = true;
+    }
+    if (dirty) {
+      doorWood.instanceMatrix.needsUpdate = true;
+      doorGlass.instanceMatrix.needsUpdate = true;
     }
   }
 
@@ -823,13 +850,17 @@ const SCHOOL = (function () {
     scene.add(tubeMesh);
 
     // 근처 형광등에만 실제 광원을 붙이는 라이트 풀
-    const poolSize = quality === 'low' ? 3 : quality === 'high' ? 7 : 5;
-    for (let i = 0; i < poolSize; i++) {
+    /*
+      점광원은 픽셀마다 계산되므로 개수가 곧 프레임이다.
+      넉넉히 만들어 두고 품질에 따라 쓰는 개수만 바꾼다.
+    */
+    for (let i = 0; i < 6; i++) {
       const l = new THREE.PointLight(0xcfe0ff, 0, 19, 1.9);
       l.visible = false;
       scene.add(l);
       lightPool.push(l);
     }
+    lightBudget = lightPool.length;
   }
 
   /* ---------------- 업데이트 ---------------- */
@@ -847,7 +878,7 @@ const SCHOOL = (function () {
           return f;
         })
         .sort((a, b) => a.dist2 - b.dist2)
-        .slice(0, lightPool.length);
+        .slice(0, lightBudget);
     }
 
     const col = new THREE.Color();
@@ -877,7 +908,7 @@ const SCHOOL = (function () {
 
     for (let i = 0; i < lightPool.length; i++) {
       const l = lightPool[i];
-      const f = sortedFixtures[i];
+      const f = i < lightBudget ? sortedFixtures[i] : null;
       if (!f) {
         l.visible = false;
         continue;
@@ -1134,6 +1165,10 @@ const SCHOOL = (function () {
     isSpotFree,
     openRoomDoors,
     updateDoors,
+    closeAllDoors,
+    setLightBudget: function (n) {
+      lightBudget = clamp(n, 0, lightPool.length);
+    },
     hasLineOfSight,
     randomSpawnCell,
     get spawnPoint() {

@@ -160,6 +160,29 @@ class Zombie {
     scene.add(this.group);
   }
 
+  /*
+    거리별 단순화.
+    좀비 한 마리는 메시 6개라 스무 마리만 모여도 드로우콜 120개가 된다.
+    멀리 있는 것은 팔다리와 눈을 끄고 몸통 하나로만 그린다.
+    안개 때문에 실루엣만 보이는 거리라 차이를 느끼기 어렵다.
+    0 = 전체, 1 = 몸통만, 2 = 아예 끔
+  */
+  setDetail(level) {
+    if (this._detail === level) return;
+    this._detail = level;
+    if (level === 2) {
+      this.group.visible = false;
+      return;
+    }
+    this.group.visible = true;
+    const full = level === 0;
+    this.eyeMesh.visible = full;
+    this.armL.visible = full;
+    this.armR.visible = full;
+    this.legL.visible = full;
+    this.legR.visible = full;
+  }
+
   removeFrom(scene) {
     scene.remove(this.group);
     this.material.dispose();
