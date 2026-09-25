@@ -37,7 +37,12 @@ export class MatchRoom {
     const url = new URL(request.url);
 
     if (url.pathname.endsWith('/count')) {
-      return json({ players: this.players.size });
+      return json({
+        players: this.players.size,
+        props: this.world.props.length,
+        zombies: this.world.aliveCount(),
+        rooms: this.world.roomsLeft(),
+      });
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') {
@@ -120,6 +125,12 @@ export class MatchRoom {
               });
             }
           }
+        }
+      } else if (msg.t === 'forcestart') {
+        // '기다리지 않고 시작' - 인원이 안 차도 이 방을 진행 상태로 만든다
+        if (!this.started) {
+          this.started = true;
+          this.broadcast({ t: 'start' });
         }
       } else if (msg.t === 'respawn') {
         entry.dead = false;

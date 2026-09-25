@@ -78,11 +78,60 @@ export class World {
     this.rooms = g.rooms;
     this.roomState = this.rooms.map((r) => ({ room: r, triggered: false, count: roomCount(r) }));
 
+    /*
+      좀비가 넘지 못하는 소품(사물함, 농구 골대 기둥).
+      클라이언트에서 난수 없이 격자로 계산되는 것들이라 여기서도 같은 값이 나온다.
+      (책상·의자는 좀비가 타고 넘으므로 서버에서도 무시한다)
+    */
+    this.props = [];
+    this.propCells = new Array(MAP_W * MAP_H);
+    this.buildProps();
+
     this.zombies = [];
     this.nextZid = 1;
     this.flow = new Int16Array(MAP_W * MAP_H).fill(-1);
     this.flowTimer = 0;
     this.cleared = false;
+  }
+
+  addProp(x, z, hw, hd) {
+    const c = { x, z, hw, hd };
+    this.props.push(c);
+    for (let gy = cz(z - hd); gy <= cz(z + hd); gy++) {
+      for (let gx = cx(x - hw); gx <= cx(x + hw); gx++) {
+        if (!inBounds(gx, gy)) continue;
+        const k = idx(gx, gy);
+        if (!this.propCells[k]) this.propCells[k] = [];
+        this.propCells[k].push(c);
+      }
+    }
+  }
+
+  buildProps() {
+    // 복도 사물함 (2.2 x 0.55, 벽을 따라)
+    for (let x = 1; x <= 31; x++) {
+      if (this.isSolid(x, 6) && !this.isSolid(x, 7)) {
+        this.addProp(wx(x) - 1.1, wz(6) + TILE / 2 + 0.3, 1.1, 0.3);
+        this.addProp(wx(x) + 1.1, wz(6) + TILE / 2 + 0.3, 1.1, 0.3);
+      }
+      if (this.isSolid(x, 9) && !this.isSolid(x, 8)) {
+        this.addProp(wx(x) - 1.1, wz(9) - TILE / 2 - 0.3, 1.1, 0.3);
+        this.addProp(wx(x) + 1.1, wz(9) - TILE / 2 - 0.3, 1.1, 0.3);
+      }
+    }
+    // 농구 골대 기둥
+    const gxc = (wx(GYM_X[0]) + wx(GYM_X[1])) / 2;
+    this.addProp(gxc, wz(GYM_Y[0]) + 1.5, 0.28, 0.28);
+    this.addProp(gxc, wz(GYM_Y[1]) - 1.5, 0.28, 0.28);
+
+    // 칸 중심이 막힌 곳은 길찾기에서 뺀다
+    this.navBlocked = new Uint8Array(MAP_W * MAP_H);
+    for (let gy = 0; gy < MAP_H; gy++) {
+      for (let gx = 0; gx < MAP_W; gx++) {
+        if (this.grid[idx(gx, gy)] === 1) continue;
+        if (this.blocked(wx(gx), wz(gy), 0.45)) this.navBlocked[idx(gx, gy)] = 1;
+      }
+    }
   }
 
   isSolid(x, y) {
@@ -99,6 +148,22 @@ export class World {
         const nz = Math.max(czw - TILE / 2, Math.min(z, czw + TILE / 2));
         const dx = x - nx, dz = z - nz;
         if (dx * dx + dz * dz < r * r) return true;
+      }
+    }
+
+    // 소품
+    for (let gy = minZ; gy <= maxZ; gy++) {
+      for (let gx = minX; gx <= maxX; gx++) {
+        if (!inBounds(gx, gy)) continue;
+        const bucket = this.propCells[idx(gx, gy)];
+        if (!bucket) continue;
+        for (let i = 0; i < bucket.length; i++) {
+          const c = bucket[i];
+          const nx = Math.max(c.x - c.hw, Math.min(x, c.x + c.hw));
+          const nz = Math.max(c.z - c.hd, Math.min(z, c.z + c.hd));
+          const dx = x - nx, dz = z - nz;
+          if (dx * dx + dz * dz < r * r) return true;
+        }
       }
     }
     return false;
@@ -132,6 +197,7 @@ export class World {
         if (n < 0 || n >= MAP_W * MAP_H) continue;
         if (i < 2 && Math.abs((n % MAP_W) - colX) !== 1) continue;
         if (dist[n] !== -1 || this.grid[n] === 1) continue;
+        if (this.navBlocked && this.navBlocked[n]) continue;
         dist[n] = d + 1;
         queue[tail++] = n;
       }
@@ -149,6 +215,7 @@ export class World {
         if (!dx && !dy) continue;
         const nx = gx + dx, ny = gy + dy;
         if (!inBounds(nx, ny) || this.grid[idx(nx, ny)] === 1) continue;
+        if (this.navBlocked && this.navBlocked[idx(nx, ny)]) continue;
         if (dx && dy && (this.isSolid(gx + dx, gy) || this.isSolid(gx, gy + dy))) continue;
         const d = this.flow[idx(nx, ny)];
         if (d < 0 || d >= best) continue;

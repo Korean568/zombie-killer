@@ -187,6 +187,15 @@ const NET = (function () {
     }
   }
 
+  function forceStart() {
+    if (status !== 'online' || !ws || ws.readyState !== 1) return;
+    try {
+      ws.send(JSON.stringify({ t: 'forcestart' }));
+    } catch (e) {
+      /* 무시 */
+    }
+  }
+
   function on(name, fn) {
     handlers[name] = fn;
   }
@@ -211,6 +220,7 @@ const NET = (function () {
     update,
     sendKills,
     sendHit,
+    forceStart,
     on,
     list,
     get zombies() {

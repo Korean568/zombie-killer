@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 44; // 로드된 번들 확인용
+window.GAME_BUILD = 45; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -2157,6 +2157,9 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   function beginMatch() {
     if (state !== 'waiting') return;
+    // 접속돼 있는데 아직 인원이 안 찼다면 이 방을 진행 상태로 만든다.
+    // (안 그러면 서버가 좀비를 안 돌려 텅 빈 학교가 된다)
+    if (NET.status === 'online' && !NET.started) NET.forceStart();
     $('#waiting').classList.remove('show');
     state = 'playing';
     hudEl.classList.add('on');
