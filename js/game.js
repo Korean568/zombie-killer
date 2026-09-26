@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 53; // 로드된 번들 확인용
+window.GAME_BUILD = 54; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -90,6 +90,7 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.
   let bossSpawned = false;
   let bossEnded = false;
   let boss = null;
+  let falling = false;
   let built = false;
 
   const tmpV1 = new THREE.Vector3();
@@ -1513,11 +1514,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (schoolCleared) return;
     schoolCleared = true;
     phase = 'field';
-    SCHOOL.openCaveGate();
+    SCHOOL.openPit();
     SFX.waveClear();
     SFX.alarm();
-    announce('운동장 뒤에 문이 열렸다', '체육관을 지나 운동장으로');
-    toast('운동장 안쪽 벽이 무너졌다 — 동굴로 들어가라', true);
+    addShake(0.7, 1.2);
+    announce('운동장 바닥이 꺼졌다', '체육관을 지나 운동장으로');
+    toast('운동장 한복판에 구멍이 생겼다 — 내려가라', true);
   }
 
   /* 진짜 끝. 보스를 쓰러뜨렸을 때만 불린다 */
@@ -1616,6 +1618,37 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   /*
+    구멍으로 떨어져 동굴로 내려간다.
+    화면을 어둡게 덮은 사이에 자리를 옮기므로 그대로 추락한 것처럼 보인다.
+  */
+  function fallIntoCave() {
+    falling = true;
+    const bo = $('#blackout');
+    bo.style.transition = 'opacity .45s linear';
+    bo.style.opacity = '1';
+    SFX.scream();
+    addShake(0.9, 0.9);
+    player.vel.set(0, 0, 0);
+
+    setTimeout(function () {
+      const sp = SCHOOL.caveSpawn;
+      player.pos.set(sp.x, 0, sp.z);
+      player.vel.set(0, 0, 0);
+      player.yaw = -Math.PI / 2; // 동굴 안쪽(동쪽)을 본다 (resetPlayer 와 같은 방향)
+      player.pitch = 0;
+      phase = 'cave';
+      giveCaveSquad();
+      SFX.impact(1);
+      addShake(0.8, 0.6);
+      SFX.groan(14);
+      announce('동굴', '모든 굴을 비우면 안쪽 문이 열린다');
+      bo.style.transition = 'opacity .9s linear';
+      bo.style.opacity = '0';
+      falling = false;
+    }, 520);
+  }
+
+  /*
     동굴에 들어가면 지원 병력이 따라 들어온다.
     킬 포인트와 상관없이 상등병 4명을 기본으로 붙여 준다.
     (이미 부하가 있으면 그 자리를 상등병으로 올려 준다)
@@ -1635,6 +1668,15 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       a.group.rotation.y = a.facing;
       a.addTo(scene);
     }
+    // 운동장에 남겨 두면 맵을 가로질러 걸어오게 된다. 같이 떨어진 걸로 친다.
+    for (let i = 0; i < allies.length; i++) {
+      const a = allies[i];
+      if (a.dead) continue;
+      const spot = allySpawnSpot();
+      a.pos.set(spot.x, 0, spot.z);
+      a.group.position.copy(a.pos);
+    }
+
     let added = 0;
     while (allies.length < ALLY_MAX) {
       const a = new Ally(allySpawnSpot(), RANK);
@@ -1691,12 +1733,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   /* 매 프레임: 동굴 진행 */
   function updateCavePhase(dt) {
-    // 운동장을 지나 동굴에 발을 들였는가
-    if (phase === 'field' && player.pos.x > SCHOOL.caveDoorPos.x) {
-      phase = 'cave';
-      announce('동굴', '모든 굴을 비우면 안쪽 문이 열린다');
-      SFX.groan(20);
-      giveCaveSquad();
+    // 운동장 구멍에 발을 들이면 떨어진다
+    if (phase === 'field' && SCHOOL.pitOpen && !falling) {
+      const pit = SCHOOL.pit;
+      const d = Math.hypot(player.pos.x - pit.x, player.pos.z - pit.z);
+      if (d < pit.r - 0.6) fallIntoCave();
     }
     if (phase !== 'cave' && phase !== 'boss') return;
 
@@ -2545,6 +2586,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     victory = false;
     phase = 'school';
     schoolCleared = false;
+    falling = false;
+    $('#blackout').style.opacity = '0';
     SCHOOL.lockGates();
     setupCave();
     $('#gameover').querySelector('h1').textContent = '사 망';

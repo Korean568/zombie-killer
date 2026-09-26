@@ -327,6 +327,10 @@
   #gameover h1{color:#f2efe4;text-shadow:0 0 44px rgba(196,40,31,.5),0 2px 14px rgba(0,0,0,.9);}
   #pause h1{font-size:44px;}
 
+  /* 구멍으로 떨어질 때 쓰는 암전 */
+  #blackout{position:fixed;inset:0;z-index:28;background:#000;opacity:0;
+    pointer-events:none;transition:opacity .45s linear;}
+
   /* ============ 보스 체력바 ============ */
   #bossbar{
     position:absolute;left:50%;top:14px;transform:translateX(-50%);
@@ -764,6 +768,8 @@
   <button class="btn ghost" id="btn-solo">기다리지 않고 시작</button>
   <div class="hint">링크를 연 사람은 모두 같은 학교로 들어옵니다</div>
 </div>
+
+<div id="blackout"></div>
 
 <div id="jumpscare"><div id="js-face"></div><div id="js-flash"></div></div>
 

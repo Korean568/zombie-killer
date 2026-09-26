@@ -123,7 +123,9 @@ const SCHOOL = (function () {
   /* 체육관 뒤 운동장 */
   const FIELD_X = [45, 56];
   const FIELD_Y = [2, 13];
-  /* 운동장 안쪽 벽에 생기는 문 (학교를 다 비워야 열린다) */
+  /* 운동장 바닥이 꺼져 생기는 구멍 (학교를 다 비워야 열린다) */
+  const PIT = { x: 128, z: 0, r: 3.0, depth: 9 };
+  /* 동굴 쪽 벽문은 쓰지 않는다 (구멍으로 떨어져 들어간다) */
   const CAVE_DOOR = [57, 7, 57, 8];
   /* 보스 아레나 입구 (동굴 방을 다 비워야 열린다) */
   const BOSS_DOOR = [71, 7, 71, 8];
@@ -1285,6 +1287,67 @@ const SCHOOL = (function () {
     */
   }
 
+  /* ---- 운동장 구멍 ---- */
+  let pitGroup = null;
+  let pitOpen = false;
+
+  function buildPit(scene) {
+    pitGroup = new THREE.Group();
+
+    const rockMat = new THREE.MeshStandardMaterial({
+      map: tiled(TEX.rock(), 1, 1), roughness: 1.0, color: 0x6f6862,
+    });
+
+    /*
+      운동장 바닥은 커다란 평면 한 장이라 진짜로 뚫을 수가 없다.
+      대신 바닥 바로 위에 검은 원을 덮고 그 아래로 수직 갱도를 세운다.
+      눈높이에서는 바닥이 꺼진 것처럼 보인다.
+    */
+    const holeGeo = new THREE.CircleGeometry(PIT.r, 18);
+    holeGeo.rotateX(-Math.PI / 2);
+    const hole = new THREE.Mesh(
+      holeGeo,
+      new THREE.MeshBasicMaterial({ color: 0x000000, toneMapped: false })
+    );
+    hole.position.set(PIT.x, 0.04, PIT.z);
+    pitGroup.add(hole);
+
+    // 갱도 안쪽 벽 (안에서 보이도록 뒤집는다)
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(PIT.r, PIT.r * 0.82, PIT.depth, 16, 1, true),
+      new THREE.MeshStandardMaterial({
+        map: tiled(TEX.rock(), 2, 2), roughness: 1.0, color: 0x59524c,
+        side: THREE.BackSide,
+      })
+    );
+    shaft.position.set(PIT.x, -PIT.depth / 2 + 0.03, PIT.z);
+    pitGroup.add(shaft);
+
+    // 깨진 가장자리 바위
+    const chunk = new THREE.BoxGeometry(1.0, 0.5, 0.8);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + rand(-0.12, 0.12);
+      const m = new THREE.Mesh(chunk, rockMat);
+      m.position.set(
+        PIT.x + Math.cos(a) * (PIT.r + 0.35),
+        rand(0.05, 0.28),
+        PIT.z + Math.sin(a) * (PIT.r + 0.35)
+      );
+      m.rotation.set(rand(-0.25, 0.25), a, rand(-0.2, 0.2));
+      m.castShadow = true;
+      pitGroup.add(m);
+      // 구멍 안으로 걸어 들어가야 하므로 가장자리에는 충돌을 걸지 않는다
+    }
+
+    // 밑에서 올라오는 초록빛
+    const glow = new THREE.PointLight(0x46ff9b, 2.4, 16, 2);
+    glow.position.set(PIT.x, -1.6, PIT.z);
+    pitGroup.add(glow);
+
+    pitGroup.visible = false;
+    scene.add(pitGroup);
+  }
+
   /* ---- 잠긴 문 ---- */
   function gateCenter(d) {
     return {
@@ -1421,10 +1484,13 @@ const SCHOOL = (function () {
     buildFieldProps(scene, rng);
     buildCaveProps(scene, rng);
     buildGates(scene);
+    buildPit(scene);
 
-    // 두 문은 잠긴 채로 시작한다
+    // 벽문 두 개는 잠긴 채로 시작한다 (동굴 쪽 벽문은 계속 잠겨 있다)
     setGateOpen(CAVE_DOOR, false);
     setGateOpen(BOSS_DOOR, false);
+    pitOpen = false;
+    if (pitGroup) pitGroup.visible = false;
 
     // 소품이 다 놓인 뒤에 계산해야 한다
     navBlocked.fill(0);
@@ -1494,12 +1560,19 @@ const SCHOOL = (function () {
     caveRooms,
     CAVE_H,
     gateOpen,
-    openCaveGate: function () { setGateOpen(CAVE_DOOR, true); },
     openBossGate: function () { setGateOpen(BOSS_DOOR, true); },
     lockGates: function () {
       setGateOpen(CAVE_DOOR, false);
       setGateOpen(BOSS_DOOR, false);
+      pitOpen = false;
+      if (pitGroup) pitGroup.visible = false;
     },
+    openPit: function () {
+      pitOpen = true;
+      if (pitGroup) pitGroup.visible = true;
+    },
+    get pitOpen() { return pitOpen; },
+    get pit() { return PIT; },
     get caveDoorPos() {
       const c = gateCenter(CAVE_DOOR);
       return new THREE.Vector3(c.x, 0, c.z);
