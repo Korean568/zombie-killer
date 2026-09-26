@@ -323,6 +323,24 @@
   #gameover h1{color:#f2efe4;text-shadow:0 0 44px rgba(196,40,31,.5),0 2px 14px rgba(0,0,0,.9);}
   #pause h1{font-size:44px;}
 
+  /* ============ 보스 체력바 ============ */
+  #bossbar{
+    position:absolute;left:50%;top:14px;transform:translateX(-50%);
+    width:min(560px,84vw);text-align:center;opacity:0;transition:opacity .45s ease;
+    pointer-events:none;
+  }
+  #bossbar.on{opacity:1;}
+  #bossbar .bb-name{display:flex;align-items:baseline;justify-content:center;gap:10px;
+    margin-bottom:5px;}
+  #bossbar .bb-name b{font-size:16px;font-weight:800;letter-spacing:.14em;color:#e8695e;
+    text-shadow:0 0 18px rgba(196,40,31,.8);}
+  #bossbar .bb-name span{font-size:10.5px;letter-spacing:.2em;color:#8a8f84;}
+  #bossbar .bb-bar{height:9px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);
+    overflow:hidden;}
+  #bossbar .bb-bar span{display:block;height:100%;transform-origin:left center;
+    background:linear-gradient(90deg,#7c1710,#e0362a);transition:transform .12s linear;}
+  #bossbar .bb-hp{margin-top:3px;font-size:11px;color:#b8b2a2;letter-spacing:.18em;}
+
   /* ============ 시작 컷신 ============ */
   /* 3D 화면 위에 자막과 레터박스만 얹는다. 뒤는 실제 학교가 보인다 */
   #intro{
@@ -589,6 +607,12 @@
     <div class="sb-title">접속자 <em id="sb-count">0</em>명</div>
     <div id="sb-rows"></div>
   </div>
+  <div id="bossbar">
+    <div class="bb-name"><b id="boss-name">세뇌자</b><span>좀비 바이러스를 퍼뜨린 자</span></div>
+    <div class="bb-bar"><span id="boss-fill"></span></div>
+    <div class="bb-hp"><b id="boss-hp">100</b> / 100</div>
+  </div>
+
   <div id="net-badge">오프라인</div>
   <div id="search-prompt" hidden><b>E</b> 사물함 수색</div>
   <div id="compass">F 손전등 · R 재장전 · E 수색 · 1 2 3 무기 · B 상점</div>
@@ -747,6 +771,7 @@
 <script src="js/weapons.js"></script>
 <script src="js/ally.js"></script>
 <script src="js/bot.js"></script>
+<script src="js/boss.js"></script>
 <script src="js/net.js"></script>
 <script src="js/touch.js"></script>
 <script src="js/game.js"></script>

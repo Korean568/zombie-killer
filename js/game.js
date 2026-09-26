@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 52; // 로드된 번들 확인용
+window.GAME_BUILD = 53; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -81,6 +81,15 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.
   let flashlight, muzzleLight, hemiLight, moonLight;
   let clock;
   let state = 'menu'; // menu | intro | waiting | playing | shop | paused | dead
+
+  /* 진행 단계: 학교 -> 운동장 -> 동굴 -> 보스 */
+  let phase = 'school';
+  let schoolCleared = false;
+  let caveStates = [];
+  let bossGateOpened = false;
+  let bossSpawned = false;
+  let bossEnded = false;
+  let boss = null;
   let built = false;
 
   const tmpV1 = new THREE.Vector3();
@@ -732,6 +741,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       }
     }
 
+    if (boss && !boss.dead) {
+      const th = raySphere(origin, dir, boss.headCenter(tmpV1), boss.headRadius);
+      if (th >= 0 && th < bestT) { best = boss; bestT = th; bestHead = true; }
+      const tb = rayCapsuleY(origin, dir, boss.bodyBase(tmpV2), boss.bodyHeight, boss.bodyRadius);
+      if (tb >= 0 && tb < bestT) { best = boss; bestT = tb; bestHead = false; }
+    }
+
     if (best) {
       const point = new THREE.Vector3()
         .copy(origin)
@@ -748,7 +764,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       }
 
       const killed = best.hurt(dmg, bestHead);
-      if (killed) onZombieKilled(best, bestHead, point);
+      if (best.isBoss) updateBossHud();          // 죽음 처리는 updateCavePhase 에서 한 번만
+      else if (killed) onZombieKilled(best, bestHead, point);
       return { zombie: best, killed, head: bestHead };
     }
 
@@ -1108,7 +1125,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       const dz = z.pos.z - player.pos.z;
       const d2 = dx * dx + dz * dz;
       z.setDetail(d2 > far2 ? 2 : d2 > near2 ? 1 : 0);
-      if (d2 <= far2) z.netUpdate(dt);
+      // 동굴 좀비는 서버가 아니라 이 클라이언트가 굴린다
+      if (z.netId && d2 <= far2) z.netUpdate(dt);
       if (z.removeMe) {
         z.removeFrom(scene);
         if (z.netId) netZombies.delete(z.netId);
@@ -1152,12 +1170,19 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     });
 
     NET.on('reset', function () {
-      // 서버가 학교를 새로 채웠다. 화면의 좀비를 비우고 다시 시작한다.
-      zombies.forEach(function (z) { z.removeFrom(scene); });
-      zombies.length = 0;
+      /*
+        서버가 학교를 새로 채웠다. 서버가 굴리던 좀비만 지운다.
+        동굴 좀비는 이 클라이언트가 굴리므로 건드리면 안 된다.
+      */
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        const z = zombies[i];
+        if (!z.netId) continue;
+        z.removeFrom(scene);
+        zombies.splice(i, 1);
+      }
       clearNetZombies();
-      SCHOOL.closeAllDoors();
-      victory = false;
+      // 동굴에 들어간 뒤라면 학교 문을 다시 닫아 봐야 방해만 된다
+      if (phase === 'school') SCHOOL.closeAllDoors();
       toast('학교가 다시 채워졌다', true);
     });
   }
@@ -1479,31 +1504,229 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
   }
 
+  /*
+    학교를 전부 비웠을 때.
+    예전엔 여기서 게임이 끝났지만, 이제는 운동장 안쪽 벽에 문이 열리고
+    그 뒤 동굴에서 진짜 마지막 싸움이 남아 있다.
+  */
   function winGame() {
+    if (schoolCleared) return;
+    schoolCleared = true;
+    phase = 'field';
+    SCHOOL.openCaveGate();
+    SFX.waveClear();
+    SFX.alarm();
+    announce('운동장 뒤에 문이 열렸다', '체육관을 지나 운동장으로');
+    toast('운동장 안쪽 벽이 무너졌다 — 동굴로 들어가라', true);
+  }
+
+  /* 진짜 끝. 보스를 쓰러뜨렸을 때만 불린다 */
+  function finishGame() {
     if (victory) return;
     victory = true;
     state = 'dead'; // 조작을 멈춘다
-    SFX.waveClear();
     SFX.stopAmbient();
     document.exitPointerLock && document.exitPointerLock();
     hudEl.classList.remove('on');
     TOUCH.setVisible(false);
     $('#gameover').querySelector('h1').textContent = '탈 출';
-    $('#go-sub').textContent = '학교를 전부 비웠다';
-    $('#g-wave').textContent = SCHOOL.rooms.length;
+    $('#go-sub').textContent = '세뇌자는 쓰러졌다';
+    $('#g-wave').textContent = SCHOOL.rooms.length + SCHOOL.caveRooms.length + 1;
     $('#g-kills').textContent = stats.kills;
     $('#g-head').textContent = stats.headshots;
     $('#g-acc').textContent =
       (stats.shots ? Math.round((stats.hits / stats.shots) * 100) : 0) + '%';
     $('#g-time').textContent = fmtTime(stats.time);
-    setTimeout(function () { showScreen('gameover'); }, 700);
+    showScreen('gameover');
   }
 
   /* 오프라인(혼자) 진행일 때만 쓰는 판정 */
   function checkVictory() {
     if (NET.status === 'online') return;
-    if (victory || roomsLeft() > 0 || aliveZombieCount() > 0) return;
+    if (schoolCleared || roomsLeft() > 0 || aliveZombieCount() > 0) return;
     winGame();
+  }
+
+  /* =========================================================
+     동굴 · 보스
+     ========================================================= */
+  function setupCave() {
+    caveStates = SCHOOL.caveRooms.map(function (room, i) {
+      return { room: room, awake: false, count: 3 + (i % 2), zombies: [] };
+    });
+    bossGateOpened = false;
+    bossSpawned = false;
+    bossEnded = false;
+    if (boss) {
+      boss.removeFrom(scene);
+      boss = null;
+    }
+    $('#bossbar').classList.remove('on');
+  }
+
+  function caveRoomsLeft() {
+    let n = 0;
+    for (let i = 0; i < caveStates.length; i++) {
+      const st = caveStates[i];
+      if (!st.awake) { n++; continue; }
+      if (st.zombies.some(function (z) { return !z.dead; })) n++;
+    }
+    return n;
+  }
+
+  /* 동굴 방에 발을 들이면 안에 있던 거대 좀비가 깨어난다 */
+  function checkCaveEntry() {
+    const gx = SCHOOL.cx(player.pos.x);
+    const gy = SCHOOL.cz(player.pos.z);
+    for (let i = 0; i < caveStates.length; i++) {
+      const st = caveStates[i];
+      if (st.awake) continue;
+      const r = st.room;
+      if (gx < r.x0 || gx > r.x1 || gy < r.y0 || gy > r.y1) continue;
+      wakeCaveRoom(st);
+    }
+  }
+
+  function wakeCaveRoom(st) {
+    st.awake = true;
+    const r = st.room;
+    for (let i = 0; i < st.count; i++) {
+      let placed = null;
+      for (let k = 0; k < 24; k++) {
+        const gx = randInt(r.x0, r.x1);
+        const gy = randInt(r.y0, r.y1);
+        const x = SCHOOL.wx(gx) + rand(-1.3, 1.3);
+        const z = SCHOOL.wz(gy) + rand(-1.3, 1.3);
+        if (!SCHOOL.isSpotFree(x, z, 0.6)) continue;
+        if (Math.hypot(x - player.pos.x, z - player.pos.z) < 5) continue;
+        placed = { x: x, z: z };
+        break;
+      }
+      if (!placed) continue;
+      // 동굴에는 거대 좀비밖에 없다
+      const z = new Zombie('brute', placed, { hp: 1, speed: 1, dmg: 1 });
+      z.caveRoom = st.room.id;
+      z.addTo(scene);
+      zombies.push(z);
+      st.zombies.push(z);
+    }
+    SFX.alarm();
+    SFX.groan(6, true);
+    announce(st.room.name, '거대 좀비 ' + st.zombies.length + '마리');
+  }
+
+  /*
+    동굴에 들어가면 지원 병력이 따라 들어온다.
+    킬 포인트와 상관없이 상등병 4명을 기본으로 붙여 준다.
+    (이미 부하가 있으면 그 자리를 상등병으로 올려 준다)
+  */
+  function giveCaveSquad() {
+    const RANK = 2; // 상등병
+    for (let i = 0; i < allies.length; i++) {
+      const a = allies[i];
+      if (a.dead) continue;
+      while (a.rank < RANK) {
+        a.rank++;
+        a._applyRank(false);
+      }
+      a.removeFrom(scene);
+      a._buildMesh();
+      a.group.position.copy(a.pos);
+      a.group.rotation.y = a.facing;
+      a.addTo(scene);
+    }
+    let added = 0;
+    while (allies.length < ALLY_MAX) {
+      const a = new Ally(allySpawnSpot(), RANK);
+      a.addTo(scene);
+      allies.push(a);
+      added++;
+    }
+    SFX.pickup('ammo');
+    updateSquadHud();
+    announce('지원 병력 합류', ALLY_RANKS[RANK].name + ' ' + ALLY_MAX + '명');
+    toast(ALLY_RANKS[RANK].name + ' ' + ALLY_MAX + '명이 함께 들어간다', true);
+  }
+
+  function spawnBoss() {
+    bossSpawned = true;
+    const sp = SCHOOL.bossSpawn;
+    boss = new Boss({ x: sp.x, z: sp.z });
+    boss.addTo(scene);
+    SFX.scream();
+    announce(BOSS_SPEC.name, BOSS_SPEC.sub);
+    $('#bossbar').classList.add('on');
+    $('#boss-name').textContent = BOSS_SPEC.name;
+    updateBossHud();
+  }
+
+  function updateBossHud() {
+    if (!boss) return;
+    const k = clamp(boss.hp / boss.maxHp, 0, 1);
+    $('#boss-fill').style.transform = 'scaleX(' + k.toFixed(3) + ')';
+    $('#boss-hp').textContent = Math.ceil(boss.hp);
+  }
+
+  const bossCtx = {
+    playerPos: null,
+    playerGround: null,
+    los: function (a, b) { return SCHOOL.hasLineOfSight(a, b); },
+    blocked: function (x, z, r) { return SCHOOL.circleBlocked(x, z, r, 'tall'); },
+    damagePlayer: function (d) { damagePlayer(d, null); },
+    tracer: function (from, to) { spawnTracer(from, to); },
+    onShot: function (dist) { SFX.allyShot(clamp(1 - dist / 40, 0.2, 1)); },
+  };
+
+  function onBossKilled() {
+    stats.kills++;
+    killPoints += 20;
+    bloodBurst(new THREE.Vector3(boss.pos.x, 1.4, boss.pos.z), { x: 0, y: 1, z: 0 }, 26);
+    SFX.zombieDeath(2);
+    SFX.waveClear();
+    $('#bossbar').classList.remove('on');
+    announce('세뇌자를 쓰러뜨렸다', '바이러스는 여기서 끝난다');
+    // 잠깐 여운을 둔 뒤 엔딩 컷신
+    setTimeout(playEnding, 1400);
+  }
+
+  /* 매 프레임: 동굴 진행 */
+  function updateCavePhase(dt) {
+    // 운동장을 지나 동굴에 발을 들였는가
+    if (phase === 'field' && player.pos.x > SCHOOL.caveDoorPos.x) {
+      phase = 'cave';
+      announce('동굴', '모든 굴을 비우면 안쪽 문이 열린다');
+      SFX.groan(20);
+      giveCaveSquad();
+    }
+    if (phase !== 'cave' && phase !== 'boss') return;
+
+    checkCaveEntry();
+
+    if (!bossGateOpened && caveRoomsLeft() === 0) {
+      bossGateOpened = true;
+      SCHOOL.openBossGate();
+      SFX.alarm();
+      announce('안쪽 문이 열렸다', '동굴 끝에 무언가 있다');
+    }
+
+    if (bossGateOpened && !bossSpawned) {
+      const gx = SCHOOL.cx(player.pos.x);
+      if (gx >= 72) {
+        phase = 'boss';
+        spawnBoss();
+      }
+    }
+
+    if (boss) {
+      bossCtx.playerPos = camera.position;
+      bossCtx.playerGround = player.pos;
+      boss.update(dt, bossCtx);
+      updateBossHud();
+      if (boss.dead && !bossEnded) {
+        bossEnded = true;
+        onBossKilled();
+      }
+    }
   }
 
   /* =========================================================
@@ -1899,8 +2122,17 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   function updateHud() {
     const online = NET.status === 'online';
-    setText(el.wave, 'wave', String(online ? NET.zombieRemain : totalRemaining()));
-    setText(el.remaining, 'remain', String(online ? NET.roomsLeft : roomsLeft()));
+    if (phase === 'cave' || phase === 'boss' || phase === 'field') {
+      // 동굴 단계에서는 동굴 진행도를 보여 준다
+      let alive = 0;
+      for (let i = 0; i < zombies.length; i++) if (!zombies[i].dead && !zombies[i].netId) alive++;
+      if (boss && !boss.dead) alive++;
+      setText(el.wave, 'wave', String(alive));
+      setText(el.remaining, 'remain', String(caveRoomsLeft() + (bossSpawned && boss && boss.dead ? 0 : 1)));
+    } else {
+      setText(el.wave, 'wave', String(online ? NET.zombieRemain : totalRemaining()));
+      setText(el.remaining, 'remain', String(online ? NET.roomsLeft : roomsLeft()));
+    }
     setText(el.kills, 'kills', '처치 ' + stats.kills + ' · 생존 ' + fmtTime(stats.time));
 
     const hpR = clamp(player.hp / player.maxHp, 0, 1);
@@ -2031,8 +2263,45 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     },
   ];
 
+  /* 엔딩 컷신은 보스가 쓰러진 자리에서 찍어야 해서 그때 만든다 */
+  function endingShots() {
+    const b = boss ? boss.pos : SCHOOL.bossArenaCenter;
+    const c = SCHOOL.bossArenaCenter;
+    return [
+      {
+        pos: [b.x + 3.0, 1.6, b.z + 2.8], pos2: [b.x + 1.9, 1.05, b.z + 1.7],
+        look: [b.x, 0.5, b.z], look2: [b.x, 0.38, b.z], dur: 4.8,
+        text: '세뇌자는 쓰러졌다.<br>방독면 너머의 얼굴은 끝내 보이지 않았다.',
+      },
+      {
+        pos: [c.x - 7, 2.4, c.z - 8], pos2: [c.x - 3, 2.0, c.z - 5],
+        look: [c.x + 4, 1.2, c.z + 2], look2: [c.x + 6, 1.0, c.z + 4], dur: 4.6,
+        text: '배양조의 불빛이 하나씩 꺼진다.<br>동굴은 다시 조용해졌다.',
+      },
+      {
+        pos: [SCHOOL.caveSpawn.x + 4, 1.7, 0.4], pos2: [SCHOOL.caveSpawn.x - 4, 1.7, 0.4],
+        look: [SCHOOL.caveSpawn.x - 20, 1.4, 0], look2: [SCHOOL.caveSpawn.x - 30, 1.4, 0], dur: 4.8,
+        text: '복도에서, 교실에서, 체육관에서 &mdash;<br>서 있던 것들이 천천히 무너져 내렸다.',
+      },
+      {
+        pos: [SCHOOL.wx(50), 2.2, SCHOOL.wz(7) + 2], pos2: [SCHOOL.wx(47), 2.6, SCHOOL.wz(7) + 2],
+        look: [SCHOOL.wx(43), 1.5, SCHOOL.wz(7) + 2], look2: [SCHOOL.wx(40), 1.5, SCHOOL.wz(7) + 2],
+        dur: 4.8,
+        text: '당신은 왔던 길을 되짚어 걸어 나간다.<br><b>열일곱</b> 개의 이름을 기억한 채로.',
+      },
+      {
+        pos: [SCHOOL.wx(46), 1.8, SCHOOL.wz(11)], pos2: [SCHOOL.wx(46.5), 2.4, SCHOOL.wz(11)],
+        look: [SCHOOL.wx(52), 3.0, SCHOOL.wz(4)], look2: [SCHOOL.wx(54), 4.0, SCHOOL.wz(3)],
+        dur: 4.4, red: true,
+        text: '무전이 다시 살아났다.<br>「수색조 &mdash; 응답하라.」',
+      },
+    ];
+  }
+
   const CUT_A = new THREE.Vector3();
   const CUT_B = new THREE.Vector3();
+  let cutList = null;      // 지금 재생 중인 컷 목록
+  let cutDone = null;      // 다 끝나고 부를 함수
   let cutIdx = -1;
   let cutT = 0;
   let cutWalkT = 0;
@@ -2052,6 +2321,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     if (!built) return;
     clearIntroTimers();
     despawnCutZombie();
+    cutList = CUT_SHOTS;
+    cutDone = enterPlay;
     state = 'intro';
     hudEl.classList.remove('on');
     TOUCH.setVisible(false);
@@ -2088,7 +2359,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function startShot(i) {
     cutIdx = i;
     cutT = 0;
-    const s = CUT_SHOTS[i];
+    const s = cutList[i];
 
     const sub = $('#cut-sub');
     sub.className = 'cut-sub';             // 애니메이션 초기화
@@ -2119,7 +2390,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   function applyShot(k) {
-    const s = CUT_SHOTS[cutIdx];
+    const s = cutList[cutIdx];
     // 가속 없이 미끄러지는 느낌 (ease-out)
     const e = 1 - Math.pow(1 - k, 1.8);
     CUT_A.set(s.pos[0], s.pos[1], s.pos[2]);
@@ -2136,7 +2407,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
   function updateCutscene(dt, time) {
     if (cutIdx < 0) return;
-    const s = CUT_SHOTS[cutIdx];
+    const s = cutList[cutIdx];
     cutT += dt;
     applyShot(clamp(cutT / s.dur, 0, 1));
 
@@ -2156,11 +2427,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       z: +player.pos.z.toFixed(2),
       y: +player.yaw.toFixed(3),
       h: Math.ceil(player.hp),
-      k: 0,
+      k: stats.kills,
     });
 
     if (cutT >= s.dur) {
-      if (cutIdx >= CUT_SHOTS.length - 1) {
+      if (cutIdx >= cutList.length - 1) {
         endCutscene();
       } else {
         // 컷 사이는 아주 짧은 암전으로 넘긴다
@@ -2180,18 +2451,44 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     clearIntroTimers();
     setFade(1, 0.8);
     $('#cut-sub').className = 'cut-sub';
-    cutTimer(enterPlay, 850);
+    cutTimer(cutDone || enterPlay, 850);
   }
 
   /* 스페이스 / 클릭: 한 컷 넘기기 */
   function introAdvance() {
     if (state !== 'intro' || cutIdx < 0) return;
-    cutT = CUT_SHOTS[cutIdx].dur;
+    cutT = cutList[cutIdx].dur;
   }
 
   function skipIntro() {
+    if (state !== 'intro') return;
     clearIntroTimers();
-    enterPlay();
+    (cutDone || enterPlay)();
+  }
+
+  /* 보스를 쓰러뜨린 뒤 나오는 엔딩 컷신 */
+  function playEnding() {
+    clearIntroTimers();
+    cutList = endingShots();
+    cutDone = finishGame;
+    cutIdx = -1;
+    state = 'intro';
+    hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
+    document.exitPointerLock && document.exitPointerLock();
+    $('#bossbar').classList.remove('on');
+
+    const box = $('#intro');
+    box.classList.remove('opening');
+    $('#cut-sub').className = 'cut-sub';
+    $('#cut-sub').innerHTML = '';
+    $('#cut-title').classList.remove('on');
+    setFade(1, 0);
+    showScreen('intro');
+    cutTimer(function () {
+      setFade(0, 1.2);
+      startShot(0);
+    }, 300);
   }
 
   /* =========================================================
@@ -2246,6 +2543,10 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     clearedRooms = 0;
     victory = false;
+    phase = 'school';
+    schoolCleared = false;
+    SCHOOL.lockGates();
+    setupCave();
     $('#gameover').querySelector('h1').textContent = '사 망';
     SCHOOL.closeAllDoors();
     setupRooms();
@@ -2421,6 +2722,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     despawnCutZombie();
     cutIdx = -1;
     $('#intro').classList.add('opening');
+    $('#waiting').classList.remove('show');
     hideScreens();
     flashlight.intensity = player.flashlightOn ? 2.0 : 0;
     state = 'playing';
@@ -2769,6 +3071,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       // 방과 좀비는 서버가 관리한다 (오프라인이면 예전처럼 직접)
       if (NET.status === 'online') syncNetZombies(dt);
       else checkRoomEntry();
+      updateCavePhase(dt);
       updateLockerPrompt();
       SCHOOL.updateDoors(dt);
 
@@ -2929,6 +3232,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       get lockers() { return lockers; },
       get roomStates() { return roomStates; },
       searchLocker: searchLocker,
+      // 동굴/보스 단계 확인용
+      get phase() { return phase; },
+      set phase(v) { phase = v; },
+      get boss() { return boss; },
+      get caveStates() { return caveStates; },
+      clearSchool: function () { winGame(); },
       get killPoints() { return killPoints; },
       // 브라우저가 rAF 를 멈춰도 시뮬레이션을 돌려 볼 수 있게
       step: function (dt, count) {

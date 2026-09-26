@@ -623,6 +623,77 @@ const TEX = (function () {
     return cache.scareFace;
   }
 
+  /* ---------- 운동장 흙바닥 ---------- */
+  function dirt() {
+    if (cache.dirt) return cache.dirt;
+    const s = 512;
+    const c = cv(s);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#4a4034';
+    ctx.fillRect(0, 0, s, s);
+    // 마른 흙 얼룩
+    for (let i = 0; i < 160; i++) {
+      const r = rand(6, 46);
+      ctx.fillStyle = 'rgba(' + (88 + rand(-22, 22) | 0) + ',' +
+        (74 + rand(-18, 18) | 0) + ',' + (56 + rand(-16, 16) | 0) + ',0.32)';
+      ctx.beginPath();
+      ctx.arc(rand(0, s), rand(0, s), r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 잡초
+    ctx.strokeStyle = 'rgba(64,74,44,0.5)';
+    for (let i = 0; i < 90; i++) {
+      const x = rand(0, s), y = rand(0, s);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + rand(-4, 4), y - rand(4, 12));
+      ctx.stroke();
+    }
+    grain(ctx, s, 26);
+    cache.dirt = finish(c, 1);
+    return cache.dirt;
+  }
+
+  /* ---------- 동굴 암반 ---------- */
+  function rock() {
+    if (cache.rock) return cache.rock;
+    const s = 512;
+    const c = cv(s);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#332e2b';
+    ctx.fillRect(0, 0, s, s);
+    // 울퉁불퉁한 면
+    for (let i = 0; i < 120; i++) {
+      const x = rand(0, s), y = rand(0, s), r = rand(18, 80);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      const v = 44 + rand(-16, 26);
+      g.addColorStop(0, 'rgba(' + (v + 12 | 0) + ',' + (v + 6 | 0) + ',' + (v | 0) + ',0.55)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 갈라진 틈
+    ctx.strokeStyle = 'rgba(12,10,9,0.75)';
+    for (let i = 0; i < 26; i++) {
+      let x = rand(0, s), y = rand(0, s);
+      ctx.lineWidth = rand(0.8, 2.4);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      for (let k = 0; k < 5; k++) {
+        x += rand(-40, 40);
+        y += rand(-40, 40);
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    grain(ctx, s, 30);
+    cache.rock = finish(c, 1);
+    return cache.rock;
+  }
+
   /* ---------- 하늘/배경 없음: 안개색만 사용 ---------- */
 
   return {
@@ -640,5 +711,7 @@ const TEX = (function () {
     poster,
     zombieSkin,
     jumpscareFace,
+    dirt,
+    rock,
   };
 })();

@@ -231,7 +231,7 @@ export class MatchRoom {
         if (result === 'cleared' && !this.resetAt) {
           this.broadcast({ t: 'cleared' });
           // 다 비운 뒤에는 잠시 뒤 학교를 새로 채워 계속 할 수 있게 한다
-          this.resetAt = now + 20000;
+          this.resetAt = now + 180000; // 동굴/보스전을 끝낼 시간을 준다
         }
         if (this.resetAt && now >= this.resetAt) {
           this.resetAt = 0;

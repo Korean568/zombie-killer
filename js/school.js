@@ -6,13 +6,20 @@ const SCHOOL = (function () {
   const TILE = 4;
   const WALL_H = 4.6;
   const GYM_H = 8.4;
-  const MAP_W = 44;
+  const CAVE_H = 7.2;
+  /*
+    격자는 동쪽으로 늘려 운동장과 동굴을 붙였다.
+    원점은 예전 학교(44칸) 기준 그대로 둔다 — 이걸 바꾸면 서버가 보내는
+    좀비 좌표와 학교 위치가 통째로 어긋난다.
+  */
+  const MAP_W = 80;
+  const ORIGIN_W = 44;
   const MAP_H = 16;
 
-  const HALF_W = (MAP_W * TILE) / 2;
+  const HALF_W = (ORIGIN_W * TILE) / 2;
   const HALF_H = (MAP_H * TILE) / 2;
 
-  /* zone: 0=벽, 1=복도, 2=교실, 3=체육관 */
+  /* zone: 0=벽, 1=복도, 2=교실, 3=체육관, 4=운동장, 5=동굴 */
   const grid = new Uint8Array(MAP_W * MAP_H); // 1 = 벽
   const zone = new Uint8Array(MAP_W * MAP_H);
   // 벽 칸의 실제 높이. 체육관에 면한 벽은 GYM_H 까지 올라간다.
@@ -113,6 +120,15 @@ const SCHOOL = (function () {
   const GYM_X = [33, 42];
   const GYM_Y = [1, 14];
 
+  /* 체육관 뒤 운동장 */
+  const FIELD_X = [45, 56];
+  const FIELD_Y = [2, 13];
+  /* 운동장 안쪽 벽에 생기는 문 (학교를 다 비워야 열린다) */
+  const CAVE_DOOR = [57, 7, 57, 8];
+  /* 보스 아레나 입구 (동굴 방을 다 비워야 열린다) */
+  const BOSS_DOOR = [71, 7, 71, 8];
+  const caveRooms = [];
+
   function carve(x0, y0, x1, y1, z) {
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
@@ -168,11 +184,57 @@ const SCHOOL = (function () {
     carve(24, 12, 24, 12, 2);
     carve(16, 11, 16, 11, 2);
 
+    buildOutside();
+
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         if (grid[idx(x, y)] === 0) navCells.push([x, y]);
       }
     }
+  }
+
+  /*
+    운동장 + 동굴.
+    동굴은 방 4개와 보스 아레나로 이루어져 있고,
+    두 개의 문(운동장 안쪽 / 보스 아레나)은 처음에 막혀 있다.
+  */
+  function buildOutside() {
+    caveRooms.length = 0;
+
+    // 운동장
+    carve(FIELD_X[0], FIELD_Y[0], FIELD_X[1], FIELD_Y[1], 4);
+    carve(43, 7, 44, 8, 4); // 체육관 -> 운동장
+
+    // 동굴 입구 (문 칸은 나중에 다시 막는다)
+    carve(CAVE_DOOR[0], CAVE_DOOR[1], CAVE_DOOR[2], CAVE_DOOR[3], 5);
+    carve(58, 7, 60, 8, 5);
+
+    // 중앙 홀
+    carve(61, 4, 65, 11, 5);
+
+    // 방 A (북) / 방 B (남)
+    carve(61, 1, 65, 2, 5);
+    carve(62, 3, 62, 3, 5);
+    carve(61, 13, 65, 14, 5);
+    carve(64, 12, 64, 12, 5);
+
+    // 동쪽 통로
+    carve(66, 7, 70, 8, 5);
+
+    // 방 C (북동) / 방 D (남동)
+    carve(67, 1, 70, 5, 5);
+    carve(68, 6, 68, 6, 5);
+    carve(67, 10, 70, 14, 5);
+    carve(68, 9, 68, 9, 5);
+
+    // 보스 아레나 (문 칸은 나중에 다시 막는다)
+    carve(BOSS_DOOR[0], BOSS_DOOR[1], BOSS_DOOR[2], BOSS_DOOR[3], 5);
+    carve(72, 3, 78, 12, 5);
+
+    caveRooms.push({ x0: 61, y0: 1, x1: 65, y1: 2, id: 101, name: '북쪽 굴' });
+    caveRooms.push({ x0: 61, y0: 13, x1: 65, y1: 14, id: 102, name: '남쪽 굴' });
+    caveRooms.push({ x0: 67, y0: 1, x1: 70, y1: 5, id: 103, name: '동북 갱도' });
+    caveRooms.push({ x0: 67, y0: 10, x1: 70, y1: 14, id: 104, name: '동남 갱도' });
   }
 
   /* ---------------- 지오메트리 ---------------- */
@@ -242,21 +304,35 @@ const SCHOOL = (function () {
     // 바닥과 맞닿은 벽 셀만 인스턴싱
     const cells = [];
     const gymUpper = [];
+    const rockCells = [];  // 동굴 암반
+    const fieldCells = []; // 운동장 담장
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         if (grid[idx(x, y)] !== 1) continue;
         let touches = false;
         let touchesGym = false;
+        let touchesCave = false;
+        let touchesField = false;
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) {
             if (!dx && !dy) continue;
             if (isWalkable(x + dx, y + dy)) {
               touches = true;
-              if (zone[idx(x + dx, y + dy)] === 3) touchesGym = true;
+              const zn = zone[idx(x + dx, y + dy)];
+              if (zn === 3) touchesGym = true;
+              if (zn === 4) touchesField = true;
+              if (zn === 5) touchesCave = true;
             }
           }
         }
-        if (touches) {
+        if (!touches) continue;
+        if (touchesCave) {
+          rockCells.push([x, y]);
+          wallTop[idx(x, y)] = CAVE_H;
+        } else if (touchesField) {
+          fieldCells.push([x, y]);
+          wallTop[idx(x, y)] = WALL_H;
+        } else {
           cells.push([x, y]);
           wallTop[idx(x, y)] = WALL_H;
           if (touchesGym) {
@@ -265,6 +341,40 @@ const SCHOOL = (function () {
           }
         }
       }
+    }
+
+    // 동굴 암반 / 운동장 담장
+    if (rockCells.length) {
+      const rm = new THREE.MeshStandardMaterial({
+        map: tiled(TEX.rock(), 1, 1), roughness: 1.0, metalness: 0.0, color: 0x9a938c,
+      });
+      const rg = new THREE.BoxGeometry(TILE, CAVE_H, TILE);
+      const ri = new THREE.InstancedMesh(rg, rm, rockCells.length);
+      const rmtx = new THREE.Matrix4();
+      rockCells.forEach((c, i) => {
+        rmtx.makeTranslation(wx(c[0]), CAVE_H / 2, wz(c[1]));
+        ri.setMatrixAt(i, rmtx);
+      });
+      ri.instanceMatrix.needsUpdate = true;
+      ri.frustumCulled = false;
+      ri.receiveShadow = true;
+      scene.add(ri);
+    }
+    if (fieldCells.length) {
+      const fm = new THREE.MeshStandardMaterial({
+        map: tiled(TEX.wall(), 1, 1), roughness: 1.0, color: 0x5c605a,
+      });
+      const fg = new THREE.BoxGeometry(TILE, WALL_H, TILE);
+      const fi = new THREE.InstancedMesh(fg, fm, fieldCells.length);
+      const fmtx = new THREE.Matrix4();
+      fieldCells.forEach((c, i) => {
+        fmtx.makeTranslation(wx(c[0]), WALL_H / 2, wz(c[1]));
+        fi.setMatrixAt(i, fmtx);
+      });
+      fi.instanceMatrix.needsUpdate = true;
+      fi.frustumCulled = false;
+      fi.receiveShadow = true;
+      scene.add(fi);
     }
 
     const wallMat = new THREE.MeshStandardMaterial({
@@ -834,6 +944,12 @@ const SCHOOL = (function () {
       }
     }
 
+    // 동굴에 남은 작업등 (갱도에 매달린 형광등)
+    [[59, 7], [63, 7], [62, 2], [63, 13], [68, 3], [68, 12], [68, 7],
+     [74, 5], [77, 7], [74, 10]].forEach(function (c) {
+      put(wx(c[0]), wz(c[1]), CAVE_H, 0.8);
+    });
+
     const hm = instanced(scene, housingGeo, housingMat, housings);
     if (hm) hm.castShadow = false;
 
@@ -1058,6 +1174,203 @@ const SCHOOL = (function () {
     return !circleBlocked(x, z, r === undefined ? 0.5 : r, 'all');
   }
 
+  /* =========================================================
+     운동장 · 동굴
+     ========================================================= */
+  let caveCeil = null;
+  const gateMeshes = {};   // 'cave' / 'boss' -> {slab, frame, glow}
+  const gateOpen = { cave: false, boss: false };
+
+  function addCaveCeiling(scene) {
+    const x0 = 57, x1 = MAP_W - 1;
+    const w = (x1 - x0 + 1) * TILE;
+    const d = MAP_H * TILE;
+    const g = new THREE.PlaneGeometry(w, d);
+    g.rotateX(Math.PI / 2);
+    caveCeil = new THREE.Mesh(
+      g,
+      new THREE.MeshStandardMaterial({
+        map: tiled(TEX.rock(), w / TILE, d / TILE),
+        roughness: 1.0,
+        color: 0x5a5450,
+      })
+    );
+    caveCeil.position.set((wx(x0) + wx(x1)) / 2, CAVE_H, 0);
+    scene.add(caveCeil);
+    return caveCeil;
+  }
+
+  /* 운동장: 녹슨 골대와 조회대 */
+  function buildFieldProps(scene, rng) {
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x6e6257, roughness: 0.85, metalness: 0.4 });
+    const bar = new THREE.BoxGeometry(0.16, 0.16, 7.2);
+    const post = new THREE.BoxGeometry(0.16, 2.6, 0.16);
+    // 문 앞을 가리지 않도록 운동장 남북 끝에 세운다
+    [[wx(50), wz(3)], [wx(50), wz(12)]].forEach(function (p) {
+      const g1 = new THREE.Mesh(bar, poleMat);
+      g1.rotation.y = Math.PI / 2;
+      g1.position.set(p[0], 2.6, p[1]);
+      scene.add(g1);
+      [-3.6, 3.6].forEach(function (o) {
+        const m = new THREE.Mesh(post, poleMat);
+        m.position.set(p[0] + o, 1.3, p[1]);
+        scene.add(m);
+        addPropCollider(p[0] + o, p[1], 0.22, 0.22, true);
+      });
+    });
+
+    // 조회대
+    const stand = new THREE.Mesh(
+      new THREE.BoxGeometry(4.4, 0.9, 3.0),
+      new THREE.MeshStandardMaterial({ color: 0x5f5a50, roughness: 0.95 })
+    );
+    stand.position.set(wx(47), 0.45, wz(10));
+    stand.receiveShadow = true;
+    scene.add(stand);
+    addPropCollider(wx(47), wz(10), 2.2, 1.5, true);
+  }
+
+  /* 동굴: 종유석·석순과 보스 아레나 기둥 */
+  function buildCaveProps(scene, rng) {
+    const rockMat = new THREE.MeshStandardMaterial({
+      map: tiled(TEX.rock(), 1, 1), roughness: 1.0, color: 0x8b847d,
+    });
+
+    // 석순 / 종유석 (장식)
+    const up = [];
+    const down = [];
+    for (let i = 0; i < 90; i++) {
+      const gx = randInt(58, MAP_W - 2);
+      const gy = randInt(1, MAP_H - 2);
+      if (!isWalkable(gx, gy)) continue;
+      const x = wx(gx) + rand(-1.6, 1.6);
+      const z = wz(gy) + rand(-1.6, 1.6);
+      if (rng() < 0.55) {
+        const h = rand(0.5, 1.5);
+        up.push(MAT(x, h / 2, z, 0, rand(0, 6.2), 0, 1, h / 1.0, 1));
+      } else {
+        const h = rand(0.7, 2.0);
+        down.push(MAT(x, CAVE_H - h / 2, z, Math.PI, rand(0, 6.2), 0, 1, h / 1.0, 1));
+      }
+    }
+    const coneGeo = new THREE.ConeGeometry(0.42, 1.0, 5);
+    instanced(scene, coneGeo, rockMat, up);
+    instanced(scene, coneGeo.clone(), rockMat, down);
+
+    // 보스 아레나 기둥 (엄폐물)
+    const pillarGeo = new THREE.CylinderGeometry(1.15, 1.45, CAVE_H, 7);
+    [[74, 5], [74, 10], [76, 7], [77, 11], [73, 8]].forEach(function (c) {
+      const m = new THREE.Mesh(pillarGeo, rockMat);
+      m.position.set(wx(c[0]), CAVE_H / 2, wz(c[1]));
+      m.castShadow = true;
+      scene.add(m);
+      addPropCollider(wx(c[0]), wz(c[1]), 1.2, 1.2, true);
+    });
+
+    // 바이러스 배양조 (초록 발광)
+    const vatGlass = new THREE.MeshStandardMaterial({
+      color: 0x3ff08a, emissive: 0x2ad06f, emissiveIntensity: 0.9,
+      transparent: true, opacity: 0.55, roughness: 0.3,
+    });
+    const vatGeo = new THREE.CylinderGeometry(0.62, 0.62, 2.1, 10);
+    [[73, 4], [75, 12], [78, 6], [63, 6], [69, 12]].forEach(function (c) {
+      const m = new THREE.Mesh(vatGeo, vatGlass);
+      m.position.set(wx(c[0]), 1.05, wz(c[1]));
+      scene.add(m);
+      addPropCollider(wx(c[0]), wz(c[1]), 0.7, 0.7, true);
+    });
+    /*
+      배양조마다 점광원을 달면 저사양에서 픽셀당 조명 계산이 확 늘어난다.
+      발광 재질만으로도 충분히 초록빛이 돈다.
+    */
+  }
+
+  /* ---- 잠긴 문 ---- */
+  function gateCenter(d) {
+    return {
+      x: wx(d[0]),
+      z: (wz(d[1]) + wz(d[3])) / 2,
+      w: (d[2] - d[0] + 1) * TILE,
+      dep: (d[3] - d[1] + 1) * TILE,
+    };
+  }
+
+  function buildGates(scene) {
+    [['cave', CAVE_DOOR], ['boss', BOSS_DOOR]].forEach(function (pair) {
+      const key = pair[0];
+      const c = gateCenter(pair[1]);
+
+      // 닫혀 있을 때 보이는 암반 슬래브
+      const slab = new THREE.Mesh(
+        new THREE.BoxGeometry(TILE * 0.98, CAVE_H, c.dep * 0.98),
+        new THREE.MeshStandardMaterial({
+          map: tiled(TEX.rock(), 1, 1), roughness: 1.0, color: 0x7d766f,
+        })
+      );
+      slab.position.set(c.x, CAVE_H / 2, c.z);
+      scene.add(slab);
+
+      // 열렸을 때 보이는 철문 틀 + 초록 불빛
+      const frame = new THREE.Group();
+      const fmat = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 0.7, metalness: 0.55 });
+      const side = new THREE.BoxGeometry(0.5, 4.4, 0.5);
+      [-c.dep / 2 + 0.4, c.dep / 2 - 0.4].forEach(function (o) {
+        const m = new THREE.Mesh(side, fmat);
+        m.position.set(c.x, 2.2, c.z + o);
+        frame.add(m);
+      });
+      const lint = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, c.dep), fmat);
+      lint.position.set(c.x, 4.5, c.z);
+      frame.add(lint);
+      const glow = new THREE.PointLight(0x45ff98, 3.2, 34, 2);
+      glow.position.set(c.x, 2.6, c.z);
+      frame.add(glow);
+
+      /*
+        어두운 운동장 저편에서도 보이도록 문틀 안에 빛나는 막을 세운다.
+        (여기가 들어가는 곳이라는 걸 한눈에 알아야 한다)
+      */
+      const veilGeo = new THREE.PlaneGeometry(c.dep - 0.9, 4.0);
+      veilGeo.rotateY(Math.PI / 2);
+      const veil = new THREE.Mesh(
+        veilGeo,
+        new THREE.MeshBasicMaterial({
+          color: 0x4bffa0,
+          transparent: true,
+          opacity: 0.5,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          fog: false,
+          toneMapped: false,
+        })
+      );
+      veil.position.set(c.x, 2.0, c.z);
+      frame.add(veil);
+
+      frame.visible = false;
+      scene.add(frame);
+
+      gateMeshes[key] = { slab: slab, frame: frame, door: pair[1] };
+    });
+  }
+
+  function setGateOpen(d, open) {
+    const key = d === CAVE_DOOR ? 'cave' : 'boss';
+    gateOpen[key] = !!open;
+    for (let y = d[1]; y <= d[3]; y++) {
+      for (let x = d[0]; x <= d[2]; x++) {
+        grid[idx(x, y)] = open ? 0 : 1;
+        navBlocked[idx(x, y)] = open ? 0 : 1;
+      }
+    }
+    const g = gateMeshes[key];
+    if (g) {
+      g.slab.visible = !open;
+      g.frame.visible = !!open;
+    }
+  }
+
   /* 두 점 사이 시야 확보 여부 */
   function hasLineOfSight(a, b) {
     const dx = b.x - a.x;
@@ -1096,10 +1409,22 @@ const SCHOOL = (function () {
     addCeiling(scene, 0, 0, 32, MAP_H - 1, WALL_H);
     addCeiling(scene, GYM_X[0], GYM_Y[0], GYM_X[1], GYM_Y[1], GYM_H);
 
+    // 운동장 흙바닥 / 동굴 암반 바닥
+    addFloor(scene, 43, 0, 56, MAP_H - 1, TEX.dirt(), 0);
+    addFloor(scene, 57, 0, MAP_W - 1, MAP_H - 1, TEX.rock(), 0);
+    addCaveCeiling(scene);
+
     buildWalls(scene);
     buildProps(scene, rng);
     buildLights(scene, rng, quality);
     buildDoors(scene);
+    buildFieldProps(scene, rng);
+    buildCaveProps(scene, rng);
+    buildGates(scene);
+
+    // 두 문은 잠긴 채로 시작한다
+    setGateOpen(CAVE_DOOR, false);
+    setGateOpen(BOSS_DOOR, false);
 
     // 소품이 다 놓인 뒤에 계산해야 한다
     navBlocked.fill(0);
@@ -1166,6 +1491,28 @@ const SCHOOL = (function () {
     openRoomDoors,
     updateDoors,
     closeAllDoors,
+    caveRooms,
+    CAVE_H,
+    gateOpen,
+    openCaveGate: function () { setGateOpen(CAVE_DOOR, true); },
+    openBossGate: function () { setGateOpen(BOSS_DOOR, true); },
+    lockGates: function () {
+      setGateOpen(CAVE_DOOR, false);
+      setGateOpen(BOSS_DOOR, false);
+    },
+    get caveDoorPos() {
+      const c = gateCenter(CAVE_DOOR);
+      return new THREE.Vector3(c.x, 0, c.z);
+    },
+    get caveSpawn() {
+      return new THREE.Vector3(wx(59), 0, wz(7) + TILE / 2);
+    },
+    get bossSpawn() {
+      return new THREE.Vector3(wx(77), 0, wz(7) + TILE / 2);
+    },
+    get bossArenaCenter() {
+      return new THREE.Vector3(wx(75), 0, wz(7) + TILE / 2);
+    },
     setLightBudget: function (n) {
       lightBudget = clamp(n, 0, lightPool.length);
     },
