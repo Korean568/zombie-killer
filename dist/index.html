@@ -323,37 +323,49 @@
   #gameover h1{color:#f2efe4;text-shadow:0 0 44px rgba(196,40,31,.5),0 2px 14px rgba(0,0,0,.9);}
   #pause h1{font-size:44px;}
 
-  /* ============ 시작 스토리 ============ */
+  /* ============ 시작 컷신 ============ */
+  /* 3D 화면 위에 자막과 레터박스만 얹는다. 뒤는 실제 학교가 보인다 */
   #intro{
-    background:radial-gradient(ellipse at 50% 40%,rgba(12,13,16,.90) 0%,#030405 72%);
-    /* 줄이 많아 화면보다 길어질 수 있다. flex 가운데 정렬은 위가 잘리므로 auto 여백으로 맞춘다 */
-    justify-content:flex-start;overflow-y:auto;
+    background:none;backdrop-filter:none;padding:0;
+    justify-content:flex-end;cursor:pointer;
   }
-  .intro-box{max-width:720px;width:100%;text-align:left;margin-top:auto;}
-  #intro .hint{margin-bottom:auto;}
-  .intro-head{
-    display:flex;align-items:center;gap:14px;margin-bottom:26px;
-    font-size:11px;letter-spacing:.38em;color:#6f7368;text-transform:uppercase;white-space:nowrap;
+  .cut-bar{position:absolute;left:0;right:0;height:11vh;background:#000;z-index:2;
+    transition:height .9s cubic-bezier(.2,.7,.3,1);}
+  .cut-bar.top{top:0;}
+  .cut-bar.bottom{bottom:0;}
+  #intro.opening .cut-bar{height:50vh;}
+  .cut-fade{position:absolute;inset:0;background:#000;z-index:3;pointer-events:none;
+    opacity:1;transition:opacity .5s linear;}
+  .cut-vig{position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(ellipse at center,rgba(0,0,0,0) 45%,rgba(0,0,0,.62) 100%);}
+
+  .cut-sub{
+    position:absolute;left:50%;bottom:calc(11vh + 26px);transform:translateX(-50%);
+    z-index:4;width:min(760px,88vw);text-align:center;
+    font-size:clamp(14px,1.9vw,19px);line-height:1.75;color:#ded8c8;
+    text-shadow:0 2px 16px #000,0 0 40px rgba(0,0,0,.9);
+    opacity:0;
   }
-  .intro-head::after{content:'';flex:1;height:1px;
-    background:linear-gradient(90deg,rgba(196,40,31,.55),rgba(255,255,255,0));}
-  .intro-line{
-    margin:0 0 15px;opacity:0;transform:translateY(9px);
-    font-size:clamp(14px,2.05vw,19px);line-height:1.85;color:#c7c2b4;
-    text-shadow:0 2px 14px rgba(0,0,0,.9);
+  .cut-sub.on{animation:cutSub .7s ease forwards;}
+  .cut-sub b{color:#e4c14a;font-weight:700;}
+  .cut-sub.red{color:#e8695e;}
+  @keyframes cutSub{from{opacity:0;transform:translateX(-50%) translateY(8px)}
+                    to{opacity:1;transform:translateX(-50%)}}
+
+  .cut-title{position:absolute;left:0;right:0;top:32%;z-index:4;text-align:center;opacity:0;
+    transition:opacity .9s ease;}
+  .cut-title.on{opacity:1;}
+  .cut-title h2{font-size:clamp(26px,5vw,52px);font-weight:900;letter-spacing:.02em;
+    text-shadow:0 0 40px rgba(0,0,0,.95);}
+  .cut-title h2 em{font-style:normal;color:var(--red);}
+  .cut-title span{display:block;margin-top:8px;font-size:11px;letter-spacing:.42em;color:#8a8f84;}
+
+  .cut-skip{
+    position:absolute;right:22px;z-index:5;bottom:calc(11vh + 18px);
+    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.22);color:#cfcabb;
+    font:inherit;font-size:12px;letter-spacing:.16em;padding:9px 16px;cursor:pointer;
   }
-  .intro-line.on{animation:introIn .85s cubic-bezier(.2,.7,.3,1) forwards;}
-  .intro-line.em{color:#f2efe4;font-weight:700;}
-  .intro-line.red{color:var(--red);font-weight:700;letter-spacing:.02em;}
-  .intro-line b{color:#e4c14a;font-weight:700;}
-  @keyframes introIn{to{opacity:1;transform:none}}
-  .intro-foot{margin-top:30px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;}
-  .intro-foot .btn{margin-top:0;}
-  /* 재생 중에는 '건너뛰기'만, 다 보면 '학교로 들어간다'만 보이게 한다 */
-  #btn-intro-go{display:none;}
-  #btn-intro-go.on{display:inline-block;opacity:0;transform:translateY(8px);
-    animation:introIn .55s ease forwards;}
-  #intro .hint{margin-top:16px;}
+  .cut-skip:hover{border-color:var(--red);color:#fff;}
 
   #loading{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;
     background:#050607;flex-direction:column;gap:18px;}
@@ -514,9 +526,9 @@
     .screen .btn{margin-top:14px;padding:12px 36px;font-size:16px;}
     .tagline{font-size:10px;letter-spacing:.25em;}
     .hint{display:none;}
-    .intro-line{margin-bottom:9px;line-height:1.6;font-size:13px;}
-    .intro-head{margin-bottom:14px;}
-    .intro-foot{margin-top:16px;}
+    .cut-bar{height:8vh;}
+    .cut-sub{bottom:calc(8vh + 14px);font-size:13px;line-height:1.6;}
+    .cut-skip{bottom:calc(8vh + 10px);right:12px;padding:7px 12px;font-size:11px;}
     .shop-box{padding:16px 16px;max-height:88vh;overflow-y:auto;}
     .shop-head h2{font-size:19px;}
   }
@@ -662,30 +674,20 @@
   <div class="hint">교실 문을 열면 안에 있던 좀비가 깨어납니다 · 사물함을 수색하면 마법 힐팩이 나올 수 있습니다</div>
 </div>
 
-<!-- ================= 시작 스토리 ================= -->
-<div class="screen" id="intro">
-  <div class="intro-box">
-    <div class="intro-head">작전 기록 · 열람 제한</div>
+<!-- ================= 시작 컷신 ================= -->
+<div class="screen opening" id="intro">
+  <div class="cut-vig"></div>
+  <div class="cut-bar top"></div>
+  <div class="cut-bar bottom"></div>
 
-    <p class="intro-line" data-hold="2700">2029년 12월, 강원 내륙. <b>대현고등학교</b>는 문을 닫은 지 3년이 지났다.</p>
-    <p class="intro-line" data-hold="3000">폐교 사유는 서류상 &lsquo;학생 수 감소&rsquo;. 하지만 마지막 학기 출석부에는
-      끝내 채워지지 않은 이름이 <b>열일곱</b> 개 남아 있었다.</p>
-    <p class="intro-line" data-hold="2900">봉쇄된 정문 안쪽에서 밤마다 종소리가 들린다는 신고가 이어지자,
-      군은 뒤늦게 수색조를 편성했다.</p>
-    <p class="intro-line em" data-hold="2800">당신은 그 수색조를 이끄는 <b>주임원사</b>다.
-      교문을 넘는 순간, 무전은 잡음만 남기고 끊겼다.</p>
-    <p class="intro-line" data-hold="2900">복도의 교실 문은 전부 닫혀 있다.
-      열지 않으면 안에 있는 것도 깨어나지 않는다. &mdash; 그러나 열지 않으면 나갈 수도 없다.</p>
-    <p class="intro-line" data-hold="2700">아홉 개 구역을 전부 비워야 정문의 사슬이 풀린다.
-      사물함 어딘가에는 누군가 숨겨 둔 <b>마법 힐팩</b>이 남아 있을 것이다.</p>
-    <p class="intro-line red" data-hold="2400">손전등을 켜라. 복도는 길고, 밤은 아직 시작도 하지 않았다.</p>
+  <div class="cut-title" id="cut-title">
+    <h2>폐교 : <em>좀비 킬러</em></h2>
+    <span>Abandoned School</span>
   </div>
+  <div class="cut-sub" id="cut-sub"></div>
+  <button class="cut-skip" id="btn-cut-skip">건너뛰기 ▸</button>
 
-  <div class="intro-foot">
-    <button class="btn" id="btn-intro-go">학교로 들어간다</button>
-    <button class="btn ghost" id="btn-intro-skip">건너뛰기</button>
-  </div>
-  <div class="hint">Space · 화면 터치 &mdash; 다음으로 넘기기</div>
+  <div class="cut-fade" id="cut-fade"></div>
 </div>
 
 <!-- ================= 일시정지 ================= -->

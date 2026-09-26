@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 51; // 로드된 번들 확인용
+window.GAME_BUILD = 52; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -1979,32 +1979,90 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   /* =========================================================
-     시작 스토리
-     한 줄씩 떠오르고, 다 뜨면 '학교로 들어간다' 버튼이 나온다.
-     재생 중에 넘기면 남은 줄을 한 번에 보여 준다.
+     시작 컷신
+     실제 학교 안에서 카메라가 움직이고 자막이 깔린다.
+     좌표는 school.js 격자 기준: wx(x)=4x-86, wz(y)=4y-30.
      ========================================================= */
-  let introTimers = [];
-  let introDone = false;
+  const CUT_SHOTS = [
+    {
+      // 복도 서쪽 입구 — 어둠 속으로 천천히 전진
+      pos: [-84, 1.55, 1.4], pos2: [-73, 1.68, 0.6],
+      look: [-58, 1.35, 0.2], look2: [-44, 1.35, -0.6],
+      dur: 5.4,
+      text: '2029년 12월, 강원 내륙.<br><b>대현고등학교</b>는 문을 닫은 지 3년이 지났다.',
+    },
+    {
+      // 사물함 벽을 옆으로 훑는다
+      pos: [-48, 1.5, 2.7], pos2: [-31, 1.5, 2.7],
+      look: [-46, 1.25, -3.4], look2: [-29, 1.25, -3.4],
+      dur: 5.4,
+      text: "폐교 사유는 서류상 &lsquo;학생 수 감소&rsquo;.<br>" +
+            '하지만 마지막 학기 출석부에는 끝내 채워지지 않은 이름이 <b>열일곱</b> 개 남아 있었다.',
+    },
+    {
+      // 2번 교실 문 앞으로 밀고 들어간다
+      pos: [-38, 1.62, 2.2], pos2: [-38, 1.42, -2.4],
+      look: [-38, 1.3, -6.5], look2: [-38, 1.25, -6.5],
+      dur: 4.8,
+      text: '봉쇄된 정문 안쪽에서 밤마다 종소리가 들린다는 신고가 이어졌다.',
+    },
+    {
+      // 체육관 — 넓고 텅 빈 공간
+      pos: [41, 2.1, 0.4], pos2: [53, 3.3, 0.4],
+      look: [64, 1.5, 0], look2: [68, 1.1, 3],
+      dur: 5.0,
+      text: '당신은 뒤늦게 편성된 수색조를 이끄는 <b>주임원사</b>다.<br>' +
+            '교문을 넘는 순간, 무전은 잡음만 남기고 끊겼다.',
+    },
+    {
+      // 복도 — 저 끝에서 무언가 걸어온다
+      pos: [-52, 1.66, 0.5], pos2: [-50, 1.6, 0.5],
+      look: [-32, 1.4, 0], look2: [-34, 1.4, 0],
+      dur: 5.4, walker: true,
+      text: '교실 문은 전부 닫혀 있다. 열지 않으면 안에 있는 것도 깨어나지 않는다.<br>' +
+            '&mdash; 그러나 열지 않으면 나갈 수도 없다.',
+    },
+    {
+      // 가까워진다
+      pos: [-47, 1.6, 0.7], pos2: [-45.4, 1.54, 0.7],
+      look: [-36, 1.45, 0], look2: [-39, 1.45, 0],
+      dur: 4.6, walker: true, red: true,
+      text: '아홉 개 구역을 전부 비워야 정문의 사슬이 풀린다.<br>손전등을 켜라.',
+    },
+  ];
 
-  function clearIntroTimers() {
-    introTimers.forEach(clearTimeout);
-    introTimers = [];
-  }
+  const CUT_A = new THREE.Vector3();
+  const CUT_B = new THREE.Vector3();
+  let cutIdx = -1;
+  let cutT = 0;
+  let cutWalkT = 0;
+  let cutZombie = null;
+  let cutTimers = [];
 
-  function introLines() {
-    return Array.prototype.slice.call($('#intro').querySelectorAll('.intro-line'));
+  function cutTimer(fn, ms) { cutTimers.push(setTimeout(fn, ms)); }
+  function clearIntroTimers() { cutTimers.forEach(clearTimeout); cutTimers = []; }
+
+  function setFade(v, sec) {
+    const f = $('#cut-fade');
+    f.style.transition = 'opacity ' + (sec || 0.5) + 's linear';
+    f.style.opacity = String(v);
   }
 
   function playIntro() {
     if (!built) return;
     clearIntroTimers();
-    introDone = false;
+    despawnCutZombie();
     state = 'intro';
     hudEl.classList.remove('on');
     TOUCH.setVisible(false);
-    introLines().forEach(function (l) { l.classList.remove('on'); });
-    $('#btn-intro-go').classList.remove('on');
-    $('#btn-intro-skip').style.display = '';
+    document.exitPointerLock && document.exitPointerLock();
+
+    const box = $('#intro');
+    box.classList.add('opening');          // 레터박스가 닫힌 상태에서 열린다
+    $('#cut-sub').className = 'cut-sub';
+    $('#cut-sub').innerHTML = '';
+    $('#cut-title').classList.remove('on');
+    setFade(1, 0);
     showScreen('intro');
 
     // 첫 클릭에서 오디오를 깨워 둔다 (브라우저 정책)
@@ -2013,37 +2071,127 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SFX.setVolume(settings.volume);
     SFX.startAmbient();
 
-    let t = 300;
-    introLines().forEach(function (l) {
-      introTimers.push(setTimeout(function () {
-        l.classList.add('on');
-        SFX.uiLine();
-      }, t));
-      t += +(l.dataset.hold || 2600);
+    cutIdx = -1;
+    cutWalkT = 0;
+    player.flashlightOn = true;
+    flashlight.intensity = 1.45; // 가까운 벽이 하얗게 타지 않도록 컷신에서는 약하게
+
+    cutTimer(function () {
+      box.classList.remove('opening');     // 레터박스 열기
+      setFade(0, 1.1);
+      $('#cut-title').classList.add('on');
+      startShot(0);
+    }, 260);
+    cutTimer(function () { $('#cut-title').classList.remove('on'); }, 4200);
+  }
+
+  function startShot(i) {
+    cutIdx = i;
+    cutT = 0;
+    const s = CUT_SHOTS[i];
+
+    const sub = $('#cut-sub');
+    sub.className = 'cut-sub';             // 애니메이션 초기화
+    void sub.offsetWidth;
+    sub.innerHTML = s.text;
+    sub.className = 'cut-sub on' + (s.red ? ' red' : '');
+    SFX.uiLine();
+
+    if (s.walker) spawnCutZombie();
+    else despawnCutZombie();
+
+    applyShot(0);
+  }
+
+  /* 컷신에만 나오는 좀비 한 마리. 복도 저편에서 걸어온다 */
+  function spawnCutZombie() {
+    if (cutZombie) return;
+    cutZombie = new Zombie('walker', { x: -22, z: 0.2 }, { hp: 1, speed: 1, dmg: 1 });
+    cutZombie.addTo(scene);
+    cutZombie.setDetail(0);
+    SFX.groan(14);
+  }
+
+  function despawnCutZombie() {
+    if (!cutZombie) return;
+    cutZombie.removeFrom(scene);
+    cutZombie = null;
+  }
+
+  function applyShot(k) {
+    const s = CUT_SHOTS[cutIdx];
+    // 가속 없이 미끄러지는 느낌 (ease-out)
+    const e = 1 - Math.pow(1 - k, 1.8);
+    CUT_A.set(s.pos[0], s.pos[1], s.pos[2]);
+    CUT_B.set(s.pos2[0], s.pos2[1], s.pos2[2]);
+    camera.position.lerpVectors(CUT_A, CUT_B, e);
+    CUT_A.set(s.look[0], s.look[1], s.look[2]);
+    CUT_B.set(s.look2[0], s.look2[1], s.look2[2]);
+    camera.lookAt(CUT_A.lerp(CUT_B, e));
+    // 손으로 든 카메라처럼 아주 약하게 흔든다
+    const t = performance.now() / 1000;
+    camera.rotation.z += Math.sin(t * 0.9) * 0.005;
+    camera.rotation.x += Math.sin(t * 1.37) * 0.003;
+  }
+
+  function updateCutscene(dt, time) {
+    if (cutIdx < 0) return;
+    const s = CUT_SHOTS[cutIdx];
+    cutT += dt;
+    applyShot(clamp(cutT / s.dur, 0, 1));
+
+    if (cutZombie) {
+      cutWalkT += dt;
+      // 두 컷에 걸쳐 복도를 따라 다가온다
+      const zx = -22 - clamp(cutWalkT / 9.4, 0, 1) * 19;
+      cutZombie.netApply(zx, 0.2, -Math.PI / 2);
+      cutZombie.netUpdate(dt);
+    }
+
+    SCHOOL.update(dt, camera.position, time);
+    updateParticles(dt);
+    updateRemotePlayers(dt);
+    NET.update(dt, {
+      x: +player.pos.x.toFixed(2),
+      z: +player.pos.z.toFixed(2),
+      y: +player.yaw.toFixed(3),
+      h: Math.ceil(player.hp),
+      k: 0,
     });
-    introTimers.push(setTimeout(finishIntro, t));
+
+    if (cutT >= s.dur) {
+      if (cutIdx >= CUT_SHOTS.length - 1) {
+        endCutscene();
+      } else {
+        // 컷 사이는 아주 짧은 암전으로 넘긴다
+        const next = cutIdx + 1;
+        cutIdx = -1;
+        setFade(1, 0.28);
+        cutTimer(function () {
+          startShot(next);
+          setFade(0, 0.45);
+        }, 300);
+      }
+    }
   }
 
-  function finishIntro() {
+  function endCutscene() {
+    cutIdx = -1;
     clearIntroTimers();
-    introLines().forEach(function (l) { l.classList.add('on'); });
-    if (!introDone) SFX.alarm();
-    introDone = true;
-    $('#btn-intro-skip').style.display = 'none';
-    $('#btn-intro-go').classList.add('on');
+    setFade(1, 0.8);
+    $('#cut-sub').className = 'cut-sub';
+    cutTimer(enterPlay, 850);
   }
 
-  /* 스페이스 / 클릭: 재생 중이면 끝까지, 다 봤으면 시작 */
+  /* 스페이스 / 클릭: 한 컷 넘기기 */
   function introAdvance() {
-    if (state !== 'intro') return;
-    if (!introDone) finishIntro();
-    else startGame();
+    if (state !== 'intro' || cutIdx < 0) return;
+    cutT = CUT_SHOTS[cutIdx].dur;
   }
 
   function skipIntro() {
     clearIntroTimers();
-    introDone = true;
-    startGame();
+    enterPlay();
   }
 
   /* =========================================================
@@ -2051,6 +2199,10 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
      ========================================================= */
   function startGame() {
     clearIntroTimers();
+    flashlight.intensity = player.flashlightOn ? 2.0 : 0;
+    despawnCutZombie();
+    cutIdx = -1;
+    $('#intro').classList.add('opening');
     if (!built) return;
     applyQuality();
     resetGame();
@@ -2075,7 +2227,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       서버에 못 붙었으면 기다릴 이유가 없으니 혼자 시작한다.
     */
     enterWaiting();
-    announce('폐교에 들어섰다', '교실을 하나씩 비워라');
   }
 
   function resetGame() {
@@ -2261,6 +2412,17 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     // (안 그러면 서버가 좀비를 안 돌려 텅 빈 학교가 된다)
     if (NET.status === 'online' && !NET.started) NET.forceStart();
     $('#waiting').classList.remove('show');
+    playIntro(); // 컷신이 끝나면 enterPlay()
+  }
+
+  /* 컷신이 끝나고 실제로 조작이 넘어가는 지점 */
+  function enterPlay() {
+    clearIntroTimers();
+    despawnCutZombie();
+    cutIdx = -1;
+    $('#intro').classList.add('opening');
+    hideScreens();
+    flashlight.intensity = player.flashlightOn ? 2.0 : 0;
     state = 'playing';
     hudEl.classList.add('on');
     TOUCH.setVisible(true);
@@ -2342,6 +2504,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       if (e.code === 'Escape') {
         if (state === 'intro') {
           clearIntroTimers();
+          despawnCutZombie();
+          cutIdx = -1;
           toMenu();
           return;
         }
@@ -2493,9 +2657,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     $('#btn-solo').addEventListener('click', beginMatch);
     $('#shop-close').addEventListener('click', closeShop);
-    $('#btn-start').addEventListener('click', playIntro);
-    $('#btn-intro-go').addEventListener('click', function (e) { e.stopPropagation(); startGame(); });
-    $('#btn-intro-skip').addEventListener('click', function (e) { e.stopPropagation(); skipIntro(); });
+    $('#btn-start').addEventListener('click', startGame);
+    $('#btn-cut-skip').addEventListener('click', function (e) { e.stopPropagation(); skipIntro(); });
     $('#intro').addEventListener('click', introAdvance);
     $('#btn-resume').addEventListener('click', resumeGame);
     $('#btn-quit').addEventListener('click', toMenu);
@@ -2664,8 +2827,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       updateTracers(dt);
       updateParticles(dt);
       SCHOOL.update(dt, player.pos, time);
-    } else if (state === 'menu' || state === 'intro') {
-      // 메뉴·스토리 배경: 복도를 천천히 둘러보는 카메라
+    } else if (state === 'intro') {
+      // 시작 컷신: 카메라가 정해진 경로를 따라 움직인다
+      updateCutscene(dt, time);
+    } else if (state === 'menu') {
+      // 메뉴 배경: 복도를 천천히 둘러보는 카메라
       menuAngle += dt * 0.08;
       const sp = SCHOOL.spawnPoint;
       camera.position.set(sp.x + 6 + Math.sin(menuAngle * 0.7) * 3, 1.7, sp.z + Math.sin(menuAngle) * 1.2);
