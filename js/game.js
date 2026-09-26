@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 50; // 로드된 번들 확인용
+window.GAME_BUILD = 51; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -20,6 +20,7 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.
   const hudEl = $('#hud');
   const screens = {
     start: $('#start'),
+    intro: $('#intro'),
     pause: $('#pause'),
     gameover: $('#gameover'),
   };
@@ -79,7 +80,7 @@ const MATCH_SERVER_URL = 'wss://zombie-killer-match.zombie-killer-match.workers.
   let viewScene, viewCamera, viewKey, viewFlash;
   let flashlight, muzzleLight, hemiLight, moonLight;
   let clock;
-  let state = 'menu'; // menu | playing | paused | dead
+  let state = 'menu'; // menu | intro | waiting | playing | shop | paused | dead
   let built = false;
 
   const tmpV1 = new THREE.Vector3();
@@ -1978,9 +1979,78 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   }
 
   /* =========================================================
+     시작 스토리
+     한 줄씩 떠오르고, 다 뜨면 '학교로 들어간다' 버튼이 나온다.
+     재생 중에 넘기면 남은 줄을 한 번에 보여 준다.
+     ========================================================= */
+  let introTimers = [];
+  let introDone = false;
+
+  function clearIntroTimers() {
+    introTimers.forEach(clearTimeout);
+    introTimers = [];
+  }
+
+  function introLines() {
+    return Array.prototype.slice.call($('#intro').querySelectorAll('.intro-line'));
+  }
+
+  function playIntro() {
+    if (!built) return;
+    clearIntroTimers();
+    introDone = false;
+    state = 'intro';
+    hudEl.classList.remove('on');
+    TOUCH.setVisible(false);
+    introLines().forEach(function (l) { l.classList.remove('on'); });
+    $('#btn-intro-go').classList.remove('on');
+    $('#btn-intro-skip').style.display = '';
+    showScreen('intro');
+
+    // 첫 클릭에서 오디오를 깨워 둔다 (브라우저 정책)
+    SFX.init();
+    SFX.resume();
+    SFX.setVolume(settings.volume);
+    SFX.startAmbient();
+
+    let t = 300;
+    introLines().forEach(function (l) {
+      introTimers.push(setTimeout(function () {
+        l.classList.add('on');
+        SFX.uiLine();
+      }, t));
+      t += +(l.dataset.hold || 2600);
+    });
+    introTimers.push(setTimeout(finishIntro, t));
+  }
+
+  function finishIntro() {
+    clearIntroTimers();
+    introLines().forEach(function (l) { l.classList.add('on'); });
+    if (!introDone) SFX.alarm();
+    introDone = true;
+    $('#btn-intro-skip').style.display = 'none';
+    $('#btn-intro-go').classList.add('on');
+  }
+
+  /* 스페이스 / 클릭: 재생 중이면 끝까지, 다 봤으면 시작 */
+  function introAdvance() {
+    if (state !== 'intro') return;
+    if (!introDone) finishIntro();
+    else startGame();
+  }
+
+  function skipIntro() {
+    clearIntroTimers();
+    introDone = true;
+    startGame();
+  }
+
+  /* =========================================================
      상태 전환
      ========================================================= */
   function startGame() {
+    clearIntroTimers();
     if (!built) return;
     applyQuality();
     resetGame();
@@ -2270,6 +2340,11 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
   function bindInput() {
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Escape') {
+        if (state === 'intro') {
+          clearIntroTimers();
+          toMenu();
+          return;
+        }
         if (state === 'waiting') {
           $('#waiting').classList.remove('show');
           toMenu();
@@ -2288,6 +2363,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         return;
       }
       keys[e.code] = true;
+
+      if (state === 'intro' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) {
+        e.preventDefault();
+        introAdvance();
+        return;
+      }
 
       if (state !== 'playing') return;
 
@@ -2412,7 +2493,10 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
 
     $('#btn-solo').addEventListener('click', beginMatch);
     $('#shop-close').addEventListener('click', closeShop);
-    $('#btn-start').addEventListener('click', startGame);
+    $('#btn-start').addEventListener('click', playIntro);
+    $('#btn-intro-go').addEventListener('click', function (e) { e.stopPropagation(); startGame(); });
+    $('#btn-intro-skip').addEventListener('click', function (e) { e.stopPropagation(); skipIntro(); });
+    $('#intro').addEventListener('click', introAdvance);
     $('#btn-resume').addEventListener('click', resumeGame);
     $('#btn-quit').addEventListener('click', toMenu);
     $('#btn-retry').addEventListener('click', startGame);
@@ -2580,8 +2664,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       updateTracers(dt);
       updateParticles(dt);
       SCHOOL.update(dt, player.pos, time);
-    } else if (state === 'menu') {
-      // 메뉴 배경: 복도를 천천히 둘러보는 카메라
+    } else if (state === 'menu' || state === 'intro') {
+      // 메뉴·스토리 배경: 복도를 천천히 둘러보는 카메라
       menuAngle += dt * 0.08;
       const sp = SCHOOL.spawnPoint;
       camera.position.set(sp.x + 6 + Math.sin(menuAngle * 0.7) * 3, 1.7, sp.z + Math.sin(menuAngle) * 1.2);

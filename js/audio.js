@@ -407,6 +407,22 @@ const SFX = (function () {
     o.stop(t + 0.18);
   }
 
+  /* ---------- 스토리 한 줄이 뜰 때 나는 낮은 타자음 ---------- */
+  function uiLine() {
+    if (!ctx) return;
+    const t = now();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(190, t);
+    o.frequency.exponentialRampToValueAtTime(96, t + 0.07);
+    env(g, t, 0.05, 0.002, 0.07);
+    o.connect(g);
+    g.connect(master);
+    o.start(t);
+    o.stop(t + 0.1);
+  }
+
   /* ---------- 아이템 획득 ---------- */
   function pickup(kind) {
     if (!ctx) return;
@@ -669,6 +685,7 @@ const SFX = (function () {
     lockerOpen,
     magicHeal,
     shieldChip,
+    uiLine,
     alarm,
     waveClear,
     step,
