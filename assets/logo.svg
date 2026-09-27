@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="폐교 좀비 킬러">
+  <title>폐교 : 좀비 킬러</title>
+
+  <defs>
+    <!-- 배경: 복도 끝 어둠 -->
+    <radialGradient id="bg" cx="50%" cy="38%" r="72%">
+      <stop offset="0%" stop-color="#1b1f24"/>
+      <stop offset="60%" stop-color="#0c0e11"/>
+      <stop offset="100%" stop-color="#050607"/>
+    </radialGradient>
+    <!-- 눈에서 번지는 붉은 빛 -->
+    <radialGradient id="eyeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff3b26" stop-opacity=".8"/>
+      <stop offset="100%" stop-color="#ff3b26" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9aa38c"/>
+      <stop offset="100%" stop-color="#5c6553"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 바탕 -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- 조준 브래킷 (네 모서리) -->
+  <g fill="#c4281f">
+    <rect x="30" y="30" width="72" height="9"/><rect x="30" y="30" width="9" height="72"/>
+    <rect x="410" y="30" width="72" height="9"/><rect x="473" y="30" width="9" height="72"/>
+    <rect x="30" y="473" width="72" height="9"/><rect x="30" y="410" width="9" height="72"/>
+    <rect x="410" y="473" width="72" height="9"/><rect x="473" y="410" width="9" height="72"/>
+  </g>
+
+  <!-- 눈빛 번짐 -->
+  <circle cx="204" cy="176" r="70" fill="url(#eyeGlow)"/>
+  <circle cx="308" cy="176" r="70" fill="url(#eyeGlow)"/>
+
+  <!-- 좀비 머리 (게임과 같은 각진 복셀 형태) -->
+  <g>
+    <rect x="150" y="96" width="212" height="200" fill="url(#skin)"/>
+    <!-- 턱 그늘 -->
+    <rect x="150" y="262" width="212" height="34" fill="#4a5243"/>
+    <!-- 벌어진 머리 상처 -->
+    <rect x="186" y="96" width="26" height="40" fill="#6d2119"/>
+    <rect x="186" y="128" width="58" height="16" fill="#6d2119"/>
+
+    <!-- 눈구멍 / 붉은 눈 -->
+    <rect x="176" y="152" width="58" height="46" fill="#0a0c0e"/>
+    <rect x="278" y="152" width="58" height="46" fill="#0a0c0e"/>
+    <rect x="192" y="166" width="26" height="20" fill="#ff3b26"/>
+    <rect x="294" y="166" width="26" height="20" fill="#ff3b26"/>
+
+    <!-- 벌린 입 + 이빨 -->
+    <rect x="196" y="226" width="120" height="58" fill="#0a0c0e"/>
+    <g fill="#e8e3d2">
+      <rect x="202" y="226" width="16" height="20"/>
+      <rect x="228" y="226" width="16" height="26"/>
+      <rect x="254" y="226" width="16" height="18"/>
+      <rect x="280" y="226" width="16" height="24"/>
+      <rect x="214" y="266" width="16" height="18"/>
+      <rect x="266" y="266" width="16" height="18"/>
+    </g>
+    <!-- 흘러내린 피 -->
+    <g fill="#8c1d1d">
+      <rect x="232" y="284" width="12" height="28"/>
+      <rect x="232" y="306" width="20" height="12"/>
+      <rect x="284" y="284" width="8" height="16"/>
+    </g>
+  </g>
+
+  <!-- 제목 -->
+  <text x="256" y="366" text-anchor="middle"
+        font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif"
+        font-size="26" font-weight="700" letter-spacing="16" fill="#8a8f84">폐교</text>
+  <rect x="216" y="382" width="80" height="2" fill="#c4281f" opacity=".8"/>
+  <text x="256" y="446" text-anchor="middle"
+        font-family="'Malgun Gothic','Apple SD Gothic Neo',sans-serif"
+        font-size="56" font-weight="900" letter-spacing="2" fill="#f2efe4">좀비 <tspan fill="#c4281f">킬러</tspan></text>
+</svg>

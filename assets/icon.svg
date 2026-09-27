@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="좀비 킬러">
+  <title>좀비 킬러</title>
+  <!-- 파비콘/앱 아이콘용: 16px 에서도 읽히도록 글자를 빼고 머리만 크게 -->
+  <rect width="64" height="64" fill="#0b0d10"/>
+
+  <!-- 모서리 조준 브래킷 -->
+  <g fill="#c4281f">
+    <rect x="3" y="3" width="11" height="3"/><rect x="3" y="3" width="3" height="11"/>
+    <rect x="50" y="3" width="11" height="3"/><rect x="58" y="3" width="3" height="11"/>
+    <rect x="3" y="58" width="11" height="3"/><rect x="3" y="50" width="3" height="11"/>
+    <rect x="50" y="58" width="11" height="3"/><rect x="58" y="50" width="3" height="11"/>
+  </g>
+
+  <!-- 좀비 머리 -->
+  <rect x="14" y="12" width="36" height="36" fill="#8b937d"/>
+  <rect x="14" y="41" width="36" height="7" fill="#525a49"/>
+  <!-- 머리 상처 -->
+  <rect x="19" y="12" width="5" height="7" fill="#6d2119"/>
+  <!-- 눈 (작게 줄여도 남도록 통째로 붉게) -->
+  <rect x="20" y="22" width="9" height="7" fill="#ff3b26"/>
+  <rect x="35" y="22" width="9" height="7" fill="#ff3b26"/>
+  <!-- 입 -->
+  <rect x="21" y="35" width="22" height="10" fill="#0a0c0e"/>
+  <g fill="#e8e3d2">
+    <rect x="23" y="35" width="3" height="4"/>
+    <rect x="29" y="35" width="3" height="5"/>
+    <rect x="35" y="35" width="3" height="4"/>
+    <rect x="26" y="41" width="3" height="4"/>
+    <rect x="32" y="41" width="3" height="4"/>
+  </g>
+</svg>
