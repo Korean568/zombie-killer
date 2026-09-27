@@ -8,65 +8,63 @@
   AI 가 없고 서버에서 받은 좌표를 따라가기만 한다.
 */
 /*
-  다른 플레이어 전용 외형 - 미 육군 전투복(대령) 차림.
-  부하(짙은 올리브 전투복 + 방탄헬멧)와 구분되도록
-  밝은 탄색 OCP 전투복 + 전투모 + 가슴의 은색 독수리로 만든다.
+  다른 플레이어 전용 외형 - 미 육군 정복(대령) 차림.
+  부하(올리브색 전투복)와 한눈에 구분되도록 남색 정복에
+  정모 + 은색 독수리 견장 + 금색 소매줄을 얹는다.
 */
 const PLAYER_RANK = '대령';
 
 const PlayerAssets = (function () {
-  /*
-    부하는 짙은 올리브(녹색 계열) 전투복이다.
-    같은 손전등 아래서도 구분되도록 이쪽은 따뜻한 탄색(황갈색)으로 확실히 민다.
-  */
-  const OCP = 0x8c7a4e;    // 전투복 (탄색 OCP)
-  const OCP_D = 0x6b5a38;  // 방탄조끼 / 장구류
-  const TROUSER = 0x82724a; // 전투복 하의
-  const CAP = 0x7f6f47;    // 전투모
-  const BOOT = 0x4a3a28;   // 전투화 (코요테 브라운)
-  const SILVER = 0xc3c9d0; // 대령 계급장 (무광 은독수리)
-  const PATCH = 0x453f2f;  // 이름표 / 부대 마크
+  const NAVY = 0x0b1228;   // 정복 상의 (거의 남색에 가까운 짙은 색)
+  const TROUSER = 0x141d3a; // 정복 바지
+  const GOLD = 0xc9a227;   // 소매줄 / 모자 휘장 / 벨트
+  const SILVER = 0xd6dbe2; // 대령 계급장(은독수리)
   const SKIN = 0x7a6450;
-  const GUN = 0x2b3035;
+  const BLACK = 0x14161a;  // 정모 챙 / 구두
+  const SHIRT = 0x8a939e;  // 셔츠
   let cached = null;
 
   function parts() {
     const p = [];
-    // 전투복 상의
-    p.push({ geo: new THREE.BoxGeometry(0.5, 0.72, 0.3), matrix: MAT(0, 1.26, 0), color: OCP });
-    // 방탄조끼 (부하보다 장비가 좋아 보이게 두껍게)
-    p.push({ geo: new THREE.BoxGeometry(0.57, 0.48, 0.37), matrix: MAT(0, 1.36, 0), color: OCP_D });
-    // 조끼 어깨 패드
-    p.push({ geo: new THREE.BoxGeometry(0.63, 0.1, 0.36), matrix: MAT(0, 1.6, 0), color: OCP_D });
-    // 탄창 파우치 세 개
-    [-0.14, 0, 0.14].forEach(function (x) {
-      p.push({ geo: new THREE.BoxGeometry(0.11, 0.14, 0.06), matrix: MAT(x, 1.22, 0.2), color: PATCH });
-    });
-    // 가슴 한가운데 대령 계급장 (은독수리)
-    p.push({ geo: new THREE.BoxGeometry(0.07, 0.04, 0.03), matrix: MAT(0, 1.5, 0.2), color: SILVER });
-    p.push({ geo: new THREE.BoxGeometry(0.17, 0.025, 0.03), matrix: MAT(0, 1.5, 0.2), color: SILVER });
-    // 이름표 / US ARMY 테이프
-    p.push({ geo: new THREE.BoxGeometry(0.15, 0.035, 0.02), matrix: MAT(0.13, 1.43, 0.2), color: PATCH });
-    p.push({ geo: new THREE.BoxGeometry(0.15, 0.035, 0.02), matrix: MAT(-0.13, 1.43, 0.2), color: PATCH });
+    // 상의
+    p.push({ geo: new THREE.BoxGeometry(0.5, 0.72, 0.3), matrix: MAT(0, 1.26, 0), color: NAVY });
+    // 셔츠와 넥타이 (깃 사이로 보이는 부분)
+    p.push({ geo: new THREE.BoxGeometry(0.17, 0.26, 0.05), matrix: MAT(0, 1.5, 0.15), color: SHIRT });
+    p.push({ geo: new THREE.BoxGeometry(0.06, 0.24, 0.03), matrix: MAT(0, 1.48, 0.18), color: BLACK });
     // 목 / 머리
     p.push({ geo: new THREE.BoxGeometry(0.18, 0.12, 0.18), matrix: MAT(0, 1.68, 0), color: SKIN });
     p.push({ geo: new THREE.BoxGeometry(0.27, 0.28, 0.27), matrix: MAT(0, 1.86, 0.01), color: SKIN });
-    // 전투모 (패트롤 캡) - 각진 크라운 + 짧은 챙
-    p.push({ geo: new THREE.BoxGeometry(0.3, 0.12, 0.31), matrix: MAT(0, 2.0, 0), color: CAP });
-    p.push({ geo: new THREE.BoxGeometry(0.28, 0.025, 0.11), matrix: MAT(0, 1.95, 0.19), color: CAP });
-    // 전투모 정면 계급장
-    p.push({ geo: new THREE.BoxGeometry(0.05, 0.035, 0.02), matrix: MAT(0, 2.01, 0.16), color: SILVER });
-    // 벨트 / 골반
-    p.push({ geo: new THREE.BoxGeometry(0.53, 0.08, 0.33), matrix: MAT(0, 0.97, 0), color: OCP_D });
+    // 정모 (챙모자) - 크라운 / 띠 / 챙 / 금색 휘장
+    p.push({ geo: new THREE.BoxGeometry(0.33, 0.13, 0.33), matrix: MAT(0, 2.03, -0.01), color: NAVY });
+    p.push({ geo: new THREE.BoxGeometry(0.34, 0.05, 0.34), matrix: MAT(0, 1.955, -0.01), color: BLACK });
+    p.push({ geo: new THREE.BoxGeometry(0.3, 0.03, 0.13), matrix: MAT(0, 1.945, 0.19), color: BLACK });
+    p.push({ geo: new THREE.BoxGeometry(0.08, 0.07, 0.03), matrix: MAT(0, 2.02, 0.17), color: GOLD });
+    // 어깨 + 대령 견장 (은색 독수리)
+    p.push({ geo: new THREE.BoxGeometry(0.58, 0.11, 0.32), matrix: MAT(0, 1.58, 0), color: NAVY });
+    [-0.21, 0.21].forEach(function (sx) {
+      // 견장판
+      p.push({ geo: new THREE.BoxGeometry(0.17, 0.05, 0.28), matrix: MAT(sx, 1.64, 0), color: NAVY });
+      // 독수리 몸통 + 펼친 날개
+      p.push({ geo: new THREE.BoxGeometry(0.06, 0.035, 0.1), matrix: MAT(sx, 1.675, 0), color: SILVER });
+      p.push({ geo: new THREE.BoxGeometry(0.15, 0.022, 0.045), matrix: MAT(sx, 1.675, 0), color: SILVER });
+    });
+    // 가슴 약장 (색색의 리본)
+    [[0xa8322d, -0.15], [0x2f5fa8, -0.09], [0xc9a227, -0.03]].forEach(function (r) {
+      p.push({ geo: new THREE.BoxGeometry(0.055, 0.035, 0.03), matrix: MAT(r[1], 1.42, 0.16), color: r[0] });
+    });
+    // 오른쪽 가슴 명찰
+    p.push({ geo: new THREE.BoxGeometry(0.13, 0.04, 0.03), matrix: MAT(0.13, 1.42, 0.16), color: BLACK });
+    // 벨트
+    p.push({ geo: new THREE.BoxGeometry(0.52, 0.07, 0.32), matrix: MAT(0, 0.96, 0), color: BLACK });
+    p.push({ geo: new THREE.BoxGeometry(0.09, 0.07, 0.33), matrix: MAT(0, 0.96, 0), color: GOLD });
+    // 골반
     p.push({ geo: new THREE.BoxGeometry(0.46, 0.16, 0.28), matrix: MAT(0, 0.88, 0), color: TROUSER });
-    // 허벅지 파우치
-    p.push({ geo: new THREE.BoxGeometry(0.11, 0.18, 0.1), matrix: MAT(0.2, 0.78, 0.04), color: PATCH });
-    // 전투화
-    p.push({ geo: new THREE.BoxGeometry(0.21, 0.16, 0.28), matrix: MAT(-0.14, 0.08, 0.03), color: BOOT });
-    p.push({ geo: new THREE.BoxGeometry(0.21, 0.16, 0.28), matrix: MAT(0.14, 0.08, 0.03), color: BOOT });
+    // 구두
+    p.push({ geo: new THREE.BoxGeometry(0.2, 0.13, 0.27), matrix: MAT(-0.14, 0.065, 0.03), color: BLACK });
+    p.push({ geo: new THREE.BoxGeometry(0.2, 0.13, 0.27), matrix: MAT(0.14, 0.065, 0.03), color: BLACK });
     // 소총
-    p.push({ geo: new THREE.BoxGeometry(0.07, 0.09, 0.5), matrix: MAT(0.18, 1.42, 0.42), color: GUN });
-    p.push({ geo: new THREE.BoxGeometry(0.05, 0.13, 0.09), matrix: MAT(0.18, 1.33, 0.3), color: GUN });
+    p.push({ geo: new THREE.BoxGeometry(0.07, 0.09, 0.5), matrix: MAT(0.18, 1.42, 0.42), color: 0x2b3035 });
+    p.push({ geo: new THREE.BoxGeometry(0.05, 0.13, 0.09), matrix: MAT(0.18, 1.33, 0.3), color: 0x2b3035 });
     return p;
   }
 
@@ -84,7 +82,7 @@ const PlayerAssets = (function () {
           g.translate(0, -0.43, 0);
           return g;
         })(),
-        // 어깨 부대 마크
+        // 소매 금줄 (장교 표식)
         chevron: new THREE.BoxGeometry(0.16, 0.12, 0.16),
       };
     }
@@ -96,17 +94,14 @@ const PlayerAssets = (function () {
     if (!matCache[hex]) {
       matCache[hex] = new THREE.MeshStandardMaterial({
         color: hex,
-        roughness: hex === SILVER ? 0.45 : 0.88,
-        metalness: hex === SILVER ? 0.55 : 0.05,
+        roughness: hex === SILVER ? 0.35 : 0.72,
+        metalness: hex === GOLD || hex === SILVER ? 0.65 : 0.12,
       });
     }
     return matCache[hex];
   }
 
-  return {
-    get, material,
-    UNIFORM: OCP, TROUSER: TROUSER, GEAR: OCP_D, PATCH: PATCH, SILVER: SILVER,
-  };
+  return { get, material, NAVY: NAVY, TROUSER: TROUSER, GOLD: GOLD, SILVER: SILVER };
 })();
 
 /* 머리 위 이름표 */
@@ -169,9 +164,9 @@ class RemotePlayer extends Ally {
       return m;
     });
 
-    const sleeveMat = PlayerAssets.material(PlayerAssets.UNIFORM);
+    const sleeveMat = PlayerAssets.material(PlayerAssets.NAVY);
     const trouserMat = PlayerAssets.material(PlayerAssets.TROUSER);
-    const patchMat = PlayerAssets.material(PlayerAssets.PATCH);
+    const goldMat = PlayerAssets.material(PlayerAssets.GOLD);
 
     this.armL = new THREE.Group();
     this.armR = new THREE.Group();
@@ -183,10 +178,10 @@ class RemotePlayer extends Ally {
     this.armR.rotation.z = -0.12;
     [this.armL, this.armR].forEach((g) => {
       g.add(new THREE.Mesh(A.arm, sleeveMat));
-      // 어깨 부대 마크 (소매 윗부분)
-      const ch = new THREE.Mesh(A.chevron, patchMat);
-      ch.position.y = -0.08;
-      ch.scale.set(1.06, 0.3, 1.06);
+      // 소매 계급장
+      const ch = new THREE.Mesh(A.chevron, goldMat);
+      ch.position.y = -0.16;
+      ch.scale.set(1.04, 0.22, 1.04);
       g.add(ch);
       this.bodyRoot.add(g);
     });
