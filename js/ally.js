@@ -52,11 +52,66 @@ const ALLY_RANKS = [
     badge: 0xf2d24f,
     scale: 1.09,
   },
+  /*
+    여기서부터는 부사관.
+    동굴(보스 구간)에서만 승급할 수 있고, 동굴에 들어갈 때 기본으로 붙는 계급이 하사다.
+  */
+  {
+    name: '하사',
+    short: 'SSG',
+    hp: 330,
+    dmg: 40,
+    cooldown: 0.42,
+    range: 40,
+    accuracy: 0.94,
+    uniform: 0x1e2419,
+    badge: 0xd8dde3,
+    scale: 1.11,
+  },
+  {
+    name: '중사',
+    short: 'SFC',
+    hp: 420,
+    dmg: 50,
+    cooldown: 0.36,
+    range: 43,
+    accuracy: 0.95,
+    uniform: 0x1b2117,
+    badge: 0xe4e9ef,
+    scale: 1.13,
+  },
+  {
+    name: '상사',
+    short: 'MSG',
+    hp: 530,
+    dmg: 62,
+    cooldown: 0.3,
+    range: 46,
+    accuracy: 0.96,
+    uniform: 0x181d14,
+    badge: 0xf2d24f,
+    scale: 1.15,
+  },
+  {
+    name: '원사',
+    short: 'SGM',
+    hp: 680,
+    dmg: 78,
+    cooldown: 0.25,
+    range: 50,
+    accuracy: 0.97,
+    uniform: 0x151a12,
+    badge: 0xffe07a,
+    scale: 1.18,
+  },
 ];
+
+/* 이 계급부터는 동굴에서만 올릴 수 있다 */
+const ALLY_NCO_FROM = 4;
 
 /* 소환 / 승급 비용 (킬 포인트) */
 const ALLY_SUMMON_COST = 12;
-const ALLY_UPGRADE_COST = [0, 18, 32, 55]; // 해당 계급이 '되기 위한' 비용
+const ALLY_UPGRADE_COST = [0, 18, 32, 55, 60, 85, 120, 165]; // 해당 계급이 '되기 위한' 비용
 const ALLY_MAX = 4;
 
 const AllyAssets = (function () {

@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 57; // 로드된 번들 확인용
+window.GAME_BUILD = 58; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -1062,11 +1062,20 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     return true;
   }
 
+  /* 부사관(하사 이상) 승급은 동굴 구간에서만 열린다 */
+  function ncoAllowed() {
+    return phase === 'cave' || phase === 'boss';
+  }
+
   function upgradeAlly(index) {
     const a = allies[index];
     if (!a || a.dead) return false;
     if (a.rank >= ALLY_RANKS.length - 1) {
       shopMessage('이미 최고 계급입니다');
+      return false;
+    }
+    if (a.rank + 1 >= ALLY_NCO_FROM && !ncoAllowed()) {
+      shopMessage('부사관 승급은 동굴에서만 가능합니다');
       return false;
     }
     const cost = ALLY_UPGRADE_COST[a.rank + 1];
@@ -1377,7 +1386,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         const maxed = a.rank >= ALLY_RANKS.length - 1;
         const next = maxed ? null : ALLY_RANKS[a.rank + 1];
         const cost = maxed ? 0 : ALLY_UPGRADE_COST[a.rank + 1];
-        const can = !maxed && killPoints >= cost;
+        const locked = !maxed && a.rank + 1 >= ALLY_NCO_FROM && !ncoAllowed();
+        const can = !maxed && !locked && killPoints >= cost;
         const chain = ALLY_RANKS.map(function (r, ri) {
           const cls = ri <= a.rank ? ' on' : ri === a.rank + 1 ? ' next' : '';
           return '<span class="rank-chip' + cls + '">' + r.name + '</span>';
@@ -1386,10 +1396,12 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
           '<button class="unit" data-ally="' + i + '"' + (can ? '' : ' disabled') + '>' +
           '<div class="u-top"><span class="u-name">' + (i + 1) + '번 ' + a.spec.name + '</span>' +
           '<span class="u-cost' + (maxed ? ' free' : '') + '">' +
-          (maxed ? 'MAX' : cost + ' KP') + '</span></div>' +
+          (maxed ? 'MAX' : locked ? '잠김' : cost + ' KP') + '</span></div>' +
           '<div class="u-stats">' + statLine(next || a.spec) + '</div>' +
           '<div class="rank-chain">' + chain + '</div>' +
-          '<div class="u-note">체력 ' + Math.ceil(a.hp) + ' / ' + a.maxHp + '</div>' +
+          '<div class="u-note">' +
+          (locked ? '부사관 승급은 동굴에서만 열립니다' :
+            '체력 ' + Math.ceil(a.hp) + ' / ' + a.maxHp) + '</div>' +
           '</button>'
         );
       })
@@ -1655,7 +1667,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     (이미 부하가 있으면 그 자리를 상등병으로 올려 준다)
   */
   function giveCaveSquad() {
-    const RANK = 2; // 상등병
+    const RANK = ALLY_NCO_FROM; // 하사
     for (let i = 0; i < allies.length; i++) {
       const a = allies[i];
       if (a.dead) continue;
@@ -1688,7 +1700,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SFX.pickup('ammo');
     updateSquadHud();
     announce('지원 병력 합류', ALLY_RANKS[RANK].name + ' ' + ALLY_MAX + '명');
-    toast(ALLY_RANKS[RANK].name + ' ' + ALLY_MAX + '명이 함께 들어간다', true);
+    toast(ALLY_RANKS[RANK].name + ' ' + ALLY_MAX + '명이 함께 들어간다 — B 상점에서 원사까지 승급 가능', true);
   }
 
   function spawnBoss() {
@@ -2785,7 +2797,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     $('#wait-fill').style.transform =
       'scaleX(' + clamp(now / MIN_PLAYERS, 0, 1).toFixed(3) + ')';
     $('#wait-room').textContent = NET.room || '-';
-    $('#wait-name').textContent = NET.myName || '-';
+    $('#wait-name').textContent = NET.myName ? PLAYER_RANK + ' ' + NET.myName : '-';
 
     const msg = $('#wait-msg');
     if (NET.status === 'connecting') {
