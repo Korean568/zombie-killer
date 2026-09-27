@@ -15,8 +15,12 @@
 const PLAYER_RANK = '대령';
 
 const PlayerAssets = (function () {
-  const NAVY = 0x0b1228;   // 정복 상의 (거의 남색에 가까운 짙은 색)
-  const TROUSER = 0x141d3a; // 정복 바지
+  /*
+    손전등을 정면으로 받으면 재질이 확 밝아진다.
+    정복이 파랗게 떠 보이지 않도록 바탕색은 거의 검정에 가깝게 잡는다.
+  */
+  const NAVY = 0x05070d;   // 정복 상의 (검정에 가까운 남색)
+  const TROUSER = 0x080b14; // 정복 바지
   const GOLD = 0xc9a227;   // 소매줄 / 모자 휘장 / 벨트
   const SILVER = 0xd6dbe2; // 대령 계급장(은독수리)
   const SKIN = 0x7a6450;
