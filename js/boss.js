@@ -25,6 +25,12 @@ const BOSS_SPEC = {
   dashSpeed: 11,
   dashTime: 0.28,
   dashCooldown: 2.2,
+  /* 좀비 소환 (자기 엄호) */
+  summonAt: [78, 56, 34, 16], // 이 체력 아래로 내려가면 부른다
+  summonCd: 15,               // 그 사이에도 주기적으로
+  summonFirst: 7,             // 등장 후 첫 소환까지
+  summonMax: 7,               // 동시에 살려 두는 최대 수
+  castTime: 1.0,              // 부르는 동안은 멈춰 있다 (반격 기회)
 };
 
 const BossAssets = (function () {
@@ -132,6 +138,12 @@ class Boss {
     this.dashTimer = 0;
     this.dashCd = 1.5;
     this.dashVec = new THREE.Vector3();
+
+    /* 소환 */
+    this.thresholds = BOSS_SPEC.summonAt.slice();
+    this.summonCd = BOSS_SPEC.summonFirst;
+    this.cast = 0;
+    this.pendingSummon = 0;
 
     this._eye = new THREE.Vector3();
     this._tmp = new THREE.Vector3();
@@ -280,6 +292,39 @@ class Boss {
     this._eye.set(this.pos.x, 1.62, this.pos.z);
     const clear = ctx.los(this._eye, ctx.playerPos);
 
+    /* ---- 좀비 소환 ---- */
+    if (this.cast > 0) {
+      // 부르는 동안은 제자리에 서서 팔을 든다. 이때가 때릴 기회다.
+      this.cast -= dt;
+      this._animateCast(dt);
+      if (this.cast <= 0 && this.pendingSummon > 0) {
+        ctx.summon(this.pendingSummon);
+        this.pendingSummon = 0;
+        this._lowerArms();
+      }
+      return;
+    }
+
+    if (this.summonCd > 0) this.summonCd -= dt;
+    let callFor = 0;
+    if (this.thresholds.length && this.hp <= this.thresholds[0]) {
+      this.thresholds.shift();
+      callFor = 4;
+    } else if (this.summonCd <= 0) {
+      callFor = 3;
+    }
+    if (callFor) {
+      const room = ctx.summonRoom();
+      this.summonCd = BOSS_SPEC.summonCd;
+      if (room > 0) {
+        this.pendingSummon = Math.min(callFor, room);
+        this.cast = BOSS_SPEC.castTime;
+        this.burstLeft = 0;
+        ctx.onCast();
+        return;
+      }
+    }
+
     /* ---- 무빙 ---- */
     this.strafeTimer -= dt;
     if (this.strafeTimer <= 0) {
@@ -375,6 +420,29 @@ class Boss {
     // 피격 시 잠깐 붉게
     const f = this.flashTimer > 0 ? 1 : 0;
     this.aura.color.setRGB(f ? 1 : 0.24, f ? 0.25 : 1, f ? 0.2 : 0.58);
+  }
+
+  /* 부르는 동작: 두 팔을 하늘로 들고 초록빛이 강해진다 */
+  _animateCast(dt) {
+    this.armL.rotation.x = dampen(this.armL.rotation.x, -2.7, 9, dt);
+    this.armR.rotation.x = dampen(this.armR.rotation.x, -2.7, 9, dt);
+    this.armL.rotation.z = dampen(this.armL.rotation.z, 0.5, 9, dt);
+    this.armR.rotation.z = dampen(this.armR.rotation.z, -0.5, 9, dt);
+    this.legL.rotation.x = dampen(this.legL.rotation.x, 0, 9, dt);
+    this.legR.rotation.x = dampen(this.legR.rotation.x, 0, 9, dt);
+    const pulse = 2.2 + Math.sin(this.animTime * 22) * 1.2;
+    this.aura.intensity = pulse;
+    this.aura.distance = 16;
+    this.aura.color.setRGB(0.24, 1, 0.58);
+  }
+
+  _lowerArms() {
+    this.armL.rotation.x = -1.3;
+    this.armR.rotation.x = -1.46;
+    this.armL.rotation.z = 0.24;
+    this.armR.rotation.z = -0.14;
+    this.aura.intensity = 1.1;
+    this.aura.distance = 9;
   }
 
   _animateDeath(dt) {

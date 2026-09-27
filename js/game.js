@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 55; // 로드된 번들 확인용
+window.GAME_BUILD = 56; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -1559,6 +1559,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     bossGateOpened = false;
     bossSpawned = false;
     bossEnded = false;
+    bossMinions = [];
     if (boss) {
       boss.removeFrom(scene);
       boss = null;
@@ -1709,6 +1710,52 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     $('#boss-hp').textContent = Math.ceil(boss.hp);
   }
 
+  /* 보스가 불러낸 좀비들 */
+  let bossMinions = [];
+
+  function bossMinionsAlive() {
+    bossMinions = bossMinions.filter(function (z) { return !z.dead; });
+    return bossMinions.length;
+  }
+
+  /*
+    보스가 자기 엄호용으로 좀비를 불러낸다.
+    아레나 안, 보스 주변에서 솟아나되 플레이어 코앞에는 놓지 않는다.
+  */
+  function summonBossZombies(n) {
+    if (!boss) return;
+    let made = 0;
+    for (let i = 0; i < n; i++) {
+      let spot = null;
+      for (let k = 0; k < 26; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = rand(4.5, 13);
+        const x = boss.pos.x + Math.cos(a) * d;
+        const z = boss.pos.z + Math.sin(a) * d;
+        if (SCHOOL.cx(x) < 72) continue;                 // 아레나 밖
+        if (!SCHOOL.isSpotFree(x, z, 0.6)) continue;
+        if (Math.hypot(x - player.pos.x, z - player.pos.z) < 5) continue;
+        spot = { x: x, z: z };
+        break;
+      }
+      if (!spot) continue;
+
+      // 빠른 좀비 위주에 일반 좀비, 드물게 거대 좀비
+      const roll = Math.random();
+      const key = roll < 0.5 ? 'runner' : roll < 0.92 ? 'walker' : 'brute';
+      const z = new Zombie(key, spot, { hp: 1, speed: 1, dmg: 1 });
+      z.addTo(scene);
+      zombies.push(z);
+      bossMinions.push(z);
+      dustBurst(new THREE.Vector3(spot.x, 0.1, spot.z), { x: 0, y: 1, z: 0 });
+      made++;
+    }
+    if (made) {
+      SFX.groan(6, true);
+      toast('좀비 ' + made + '마리가 세뇌자를 엄호한다', true);
+    }
+  }
+
   const bossCtx = {
     playerPos: null,
     playerGround: null,
@@ -1717,11 +1764,27 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     damagePlayer: function (d) { damagePlayer(d, null); },
     tracer: function (from, to) { spawnTracer(from, to); },
     onShot: function (dist) { SFX.allyShot(clamp(1 - dist / 40, 0.2, 1)); },
+    summonRoom: function () {
+      return Math.max(0, BOSS_SPEC.summonMax - bossMinionsAlive());
+    },
+    onCast: function () {
+      SFX.alarm();
+      addShake(0.35, 0.5);
+      announce('세뇌자가 좀비를 불러낸다', '부를 때는 멈춰 있다 — 지금이 기회다');
+    },
+    summon: function (n) { summonBossZombies(n); },
   };
 
   function onBossKilled() {
     stats.kills++;
     killPoints += 20;
+    // 세뇌가 풀린다 — 불려 나온 좀비들도 함께 쓰러진다
+    let freed = 0;
+    bossMinions.forEach(function (z) {
+      if (!z.dead) { z.die(); freed++; }
+    });
+    bossMinions = [];
+    if (freed) toast('세뇌가 풀려 좀비 ' + freed + '마리가 무너졌다', true);
     bloodBurst(new THREE.Vector3(boss.pos.x, 1.4, boss.pos.z), { x: 0, y: 1, z: 0 }, 26);
     SFX.zombieDeath(2);
     SFX.waveClear();
