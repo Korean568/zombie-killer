@@ -2,7 +2,7 @@
    game.js - 메인 게임 루프
    ========================================================= */
 
-window.GAME_BUILD = 56; // 로드된 번들 확인용
+window.GAME_BUILD = 57; // 로드된 번들 확인용
 
 /*
   멀티플레이 서버 주소.
@@ -1733,17 +1733,15 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         const x = boss.pos.x + Math.cos(a) * d;
         const z = boss.pos.z + Math.sin(a) * d;
         if (SCHOOL.cx(x) < 72) continue;                 // 아레나 밖
-        if (!SCHOOL.isSpotFree(x, z, 0.6)) continue;
+        if (!SCHOOL.isSpotFree(x, z, 0.95)) continue;    // 거대 좀비라 자리가 넓어야 한다
         if (Math.hypot(x - player.pos.x, z - player.pos.z) < 5) continue;
         spot = { x: x, z: z };
         break;
       }
       if (!spot) continue;
 
-      // 빠른 좀비 위주에 일반 좀비, 드물게 거대 좀비
-      const roll = Math.random();
-      const key = roll < 0.5 ? 'runner' : roll < 0.92 ? 'walker' : 'brute';
-      const z = new Zombie(key, spot, { hp: 1, speed: 1, dmg: 1 });
+      // 엄호는 전부 거대 좀비다
+      const z = new Zombie('brute', spot, { hp: 1, speed: 1, dmg: 1 });
       z.addTo(scene);
       zombies.push(z);
       bossMinions.push(z);
@@ -1752,7 +1750,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     }
     if (made) {
       SFX.groan(6, true);
-      toast('좀비 ' + made + '마리가 세뇌자를 엄호한다', true);
+      toast('거대 좀비 ' + made + '마리가 세뇌자를 엄호한다', true);
     }
   }
 
@@ -1770,7 +1768,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     onCast: function () {
       SFX.alarm();
       addShake(0.35, 0.5);
-      announce('세뇌자가 좀비를 불러낸다', '부를 때는 멈춰 있다 — 지금이 기회다');
+      announce('세뇌자가 거대 좀비를 불러낸다', '부를 때는 멈춰 있다 — 지금이 기회다');
     },
     summon: function (n) { summonBossZombies(n); },
   };

@@ -29,7 +29,8 @@ const BOSS_SPEC = {
   summonAt: [78, 56, 34, 16], // 이 체력 아래로 내려가면 부른다
   summonCd: 15,               // 그 사이에도 주기적으로
   summonFirst: 7,             // 등장 후 첫 소환까지
-  summonMax: 7,               // 동시에 살려 두는 최대 수
+  summonCount: 5,             // 한 번에 부르는 수 (전부 거대 좀비)
+  summonMax: 5,               // 동시에 살려 두는 최대 수
   castTime: 1.0,              // 부르는 동안은 멈춰 있다 (반격 기회)
 };
 
@@ -309,9 +310,9 @@ class Boss {
     let callFor = 0;
     if (this.thresholds.length && this.hp <= this.thresholds[0]) {
       this.thresholds.shift();
-      callFor = 4;
+      callFor = BOSS_SPEC.summonCount;
     } else if (this.summonCd <= 0) {
-      callFor = 3;
+      callFor = BOSS_SPEC.summonCount;
     }
     if (callFor) {
       const room = ctx.summonRoom();
