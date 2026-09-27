@@ -630,14 +630,20 @@ const SCHOOL = (function () {
       frames.push(MAT(x - Math.sin(ry) * 0.09, 2.7, z - Math.cos(ry) * 0.09, 0, ry, 0));
     };
 
-    for (let x = 1; x < MAP_W - 1; x++) {
+    /*
+      창문은 학교 건물 바깥벽에만 단다.
+      격자를 동쪽으로 늘린 뒤로는 운동장·동굴까지 훑기 때문에
+      학교 구역(x <= 42)으로 잘라 준다. 동굴 벽에 창이 달리면 곤란하다.
+    */
+    const SCHOOL_X_END = GYM_X[1];
+    for (let x = 1; x <= SCHOOL_X_END; x++) {
       if (isSolid(x, 0) && isWalkable(x, 1)) put(wx(x), wz(0) + TILE / 2 + 0.08, 0);
       if (isSolid(x, MAP_H - 1) && isWalkable(x, MAP_H - 2))
         put(wx(x), wz(MAP_H - 1) - TILE / 2 - 0.08, Math.PI);
     }
     for (let y = 1; y < MAP_H - 1; y++) {
-      if (isSolid(MAP_W - 1, y) && isWalkable(MAP_W - 2, y))
-        put(wx(MAP_W - 1) - TILE / 2 - 0.08, wz(y), -Math.PI / 2);
+      if (isSolid(SCHOOL_X_END + 1, y) && isWalkable(SCHOOL_X_END, y))
+        put(wx(SCHOOL_X_END + 1) - TILE / 2 - 0.08, wz(y), -Math.PI / 2);
     }
 
     const paneMesh = instanced(scene, geo, mat, panes);
