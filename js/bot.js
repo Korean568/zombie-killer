@@ -148,6 +148,7 @@ class RemotePlayer extends Ally {
     this.targetX = pos.x;
     this.targetZ = pos.z;
     this.targetYaw = 0;
+    this.muzzleT = 0;
   }
 
   /* 부하와 구분되도록 정복 차림으로 만든다 */
@@ -218,11 +219,19 @@ class RemotePlayer extends Ally {
     this.targetZ = s.z;
     this.targetYaw = s.y;
     if (typeof s.k === 'number') this.kills = s.k;
+    // 쓰러진 사람은 보이지 않는다 (살아나면 다시 보인다)
+    this.group.visible = !s.d;
   }
 
   update(dt) {
     if (this.dead) return;
     this.animTime += dt;
+
+    // 총구 불꽃은 잠깐만
+    if (this.muzzleT > 0) {
+      this.muzzleT -= dt;
+      if (this.muzzleT <= 0) this.muzzle.visible = false;
+    }
 
     // 20Hz 로 오는 좌표라 부드럽게 따라간다
     const px = this.pos.x;

@@ -696,6 +696,13 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       }
     }
     playShotFeedback();
+    if (NET.status === 'online') {
+      // 남들 화면에도 내 총알이 날아가게
+      const far = shotFeedback.wallDist < Infinity
+        ? shotFeedback.wallDist
+        : Math.min(def.range, 40);
+      NET.sendShot(origin, origin.clone().addScaledVector(baseDir, far));
+    }
     if (anyHit) {
       stats.hits++;
       showHitmarker(anyKill);
@@ -1136,7 +1143,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       const d2 = dx * dx + dz * dz;
       z.setDetail(d2 > far2 ? 2 : d2 > near2 ? 1 : 0);
       // 동굴 좀비는 서버가 아니라 이 클라이언트가 굴린다
-      if (z.netId && d2 <= far2) z.netUpdate(dt);
+      if (z.netId && (d2 <= far2 || z.dead)) z.netUpdate(dt);
       if (z.removeMe) {
         z.removeFrom(scene);
         if (z.netId) netZombies.delete(z.netId);
@@ -1163,6 +1170,22 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         showHitmarker(true);
         updateHud();
       }
+    });
+
+    /* 진행 중인 방에 합류했다 — 이미 열린 교실 문을 열어 둔다 */
+    NET.on('welcome', function (m) {
+      (m.open || []).forEach(function (id) { SCHOOL.openRoomDoors(id); });
+    });
+
+    /* 남이 쏜 총 — 예광탄과 총구 불꽃 */
+    NET.on('shot', function (m) {
+      if (!m.a || !m.b) return;
+      spawnTracer(
+        new THREE.Vector3(m.a[0], m.a[1], m.a[2]),
+        new THREE.Vector3(m.b[0], m.b[1], m.b[2])
+      );
+      const r = remotePlayers.get(m.id);
+      if (r && r.muzzle) { r.muzzle.visible = true; r.muzzleT = 0.05; }
     });
 
     NET.on('room', function (m) {
@@ -1197,9 +1220,22 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     });
   }
 
-  /* 매치 명단은 실제 접속자만으로 구성한다. 봇은 없다. */
-  function setupMatch() {
-    roster = [{ name: NET.myName || '나', kills: 0, me: true }];
+  /*
+    매치 명단은 실제 접속자만으로 구성한다. 봇은 없다.
+    서버 소식이 1초에 20번 오는데 그때마다 명단을 새로 만들면
+    내 킬 수가 0 으로 되돌아가 깜빡이고 점수판도 20번씩 다시 그려진다.
+    그래서 사람이 들어오거나 나갈 때만 다시 짠다.
+  */
+  let rosterSig = '';
+  function setupMatch(force) {
+    const ids = NET.status === 'online'
+      ? NET.list().map(function (h) { return h.id; }).sort().join(',')
+      : '';
+    const sig = (NET.myName || '') + '|' + ids;
+    if (!force && sig === rosterSig) return;
+    rosterSig = sig;
+
+    roster = [{ name: NET.myName || '나', kills: stats.kills, me: true }];
     if (NET.status === 'online') {
       NET.list().forEach(function (h) {
         roster.push({ name: h.name, kills: h.kills || 0, me: false, netId: h.id });
@@ -2536,13 +2572,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     SCHOOL.update(dt, camera.position, time);
     updateParticles(dt);
     updateRemotePlayers(dt);
-    NET.update(dt, {
-      x: +player.pos.x.toFixed(2),
-      z: +player.pos.z.toFixed(2),
-      y: +player.yaw.toFixed(3),
-      h: Math.ceil(player.hp),
-      k: stats.kills,
-    });
 
     if (cutT >= s.dur) {
       if (cutIdx >= cutList.length - 1) {
@@ -2682,7 +2711,8 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     setupWeapons();
     flowField = computeFlowField(player.pos.x, player.pos.z);
     scatterPickups(6);
-    setupMatch();
+    rosterSig = '';
+    setupMatch(true);
     updateHud();
     updateAmmoHud();
   }
@@ -2844,7 +2874,7 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
     state = 'playing';
     hudEl.classList.add('on');
     TOUCH.setVisible(true);
-    setupMatch();
+    setupMatch(true);
     announce('폐교에 들어섰다', '교실을 하나씩 비워라');
     requestLock();
   }
@@ -3175,8 +3205,16 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
           addShake(0.12, 0.12);
         },
       };
+      /*
+        온라인이면 학교 좀비는 서버가 굴린다.
+        여기서 또 굴리면 서버가 보내 준 자리와 싸워서 덜덜 떨리고,
+        물리는 피해도 (서버 hurt + 여기서 한 번) 두 번 들어간다.
+        동굴 좀비(netId 없음)는 이 컴퓨터가 굴리므로 그대로 둔다.
+      */
+      const netLive = NET.status === 'online';
       for (let i = zombies.length - 1; i >= 0; i--) {
         const z = zombies[i];
+        if (netLive && z.netId) continue;
         z.update(dt, ctx);
         if (z.removeMe) {
           z.removeFrom(scene);
@@ -3194,14 +3232,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       updateAllies(dt);
       updateRemotePlayers(dt);
       updateRoster(dt);
-      NET.update(dt, {
-        x: +player.pos.x.toFixed(2),
-        z: +player.pos.z.toFixed(2),
-        y: +player.yaw.toFixed(3),
-        h: Math.ceil(player.hp),
-        k: stats.kills,
-        d: player.hp <= 0 ? 1 : 0,
-      });
       updateTracers(dt);
       updatePickups(dt);
       updateParticles(dt);
@@ -3232,13 +3262,6 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
         updateWaitScreen();
       }
       updateRemotePlayers(dt);
-      NET.update(dt, {
-        x: +player.pos.x.toFixed(2),
-        z: +player.pos.z.toFixed(2),
-        y: +player.yaw.toFixed(3),
-        h: Math.ceil(player.hp),
-        k: 0,
-      });
       SCHOOL.update(dt, player.pos, time);
       updateParticles(dt);
     } else if (state === 'shop') {
@@ -3268,6 +3291,24 @@ const SPEED = { walk: 4.6, sprint: 6.6, crouch: 2.3, air: 0.35 };
       SCHOOL.update(dt, camera.position, time);
     }
 
+    /*
+      상점·일시정지·사망 화면에서도 서버에 내 상태를 보낸다.
+      15초 동안 아무 말이 없으면 서버가 '나간 사람' 으로 보고 연결을 닫는다.
+      (예전에는 상점에서 장비를 고르다 보면 멀티플레이가 끊겼다)
+    */
+    if (NET.status === 'online') NET.update(dt, netSnapshot());
+  }
+
+  /* 서버에 보내는 내 상태 한 덩어리 */
+  function netSnapshot() {
+    return {
+      x: +player.pos.x.toFixed(2),
+      z: +player.pos.z.toFixed(2),
+      y: +player.yaw.toFixed(3),
+      h: Math.ceil(player.hp),
+      k: stats.kills,
+      d: player.hp <= 0 ? 1 : 0,
+    };
   }
 
   function render() {

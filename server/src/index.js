@@ -81,6 +81,8 @@ export class MatchRoom {
       started: this.started,
       need: MIN_TO_START,
       rooms: this.world.roomState.map((st) => (st.triggered ? 1 : 0)),
+      // 이미 깨어난 교실 번호 — 중간에 들어온 사람도 그 문을 열어 둔다
+      open: this.world.roomState.filter((st) => st.triggered).map((st) => st.room.id),
       zs: this.world.snapshot(),
     });
     this.broadcast({ t: 'join', id, name }, id);

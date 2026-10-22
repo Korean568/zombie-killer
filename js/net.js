@@ -17,6 +17,12 @@ const NET = (function () {
 
   let ws = null;
   let myId = null;
+  let want = false;      // 붙어 있어야 하는 상태인가 (disconnect 하면 꺼진다)
+  let everOnline = false; // 한 번이라도 붙은 적이 있는가
+  let roomBase = 'main';
+  let retry = 0;
+  let retryTimer = null;
+  let beat = null;       // 화면 갱신과 상관없이 뛰는 심장박동
   let myName = '';
   let started = false;
   let needCount = 10;
@@ -49,24 +55,61 @@ const NET = (function () {
       status = 'off';
       return false;
     }
+    closeSocket();       // 열려 있던 연결이 있으면 먼저 닫는다 (안 닫으면 유령이 남는다)
+    want = true;
+    everOnline = false;
+    roomBase = room || 'main';
+    retry = 0;
+    tryJoin();
+    return true;
+  }
+
+  function tryJoin() {
     status = 'connecting';
     if (onRosterChange) onRosterChange();
 
     const base = SERVER.replace(/\/$/, '');
     const httpBase = base.replace(/^ws/, 'http');
 
-    fetch(httpBase + '/join?room=' + encodeURIComponent(room || 'main'))
+    fetch(httpBase + '/join?room=' + encodeURIComponent(roomBase))
       .then(function (r) { return r.json(); })
       .then(function (info) {
-        roomName = info.room || (room || 'main') + '-1';
+        roomName = info.room || roomBase + '-1';
         openSocket(base + '/room/' + encodeURIComponent(roomName));
       })
       .catch(function (e) {
         status = 'failed';
         lastError = '방 배정 실패';
         if (onRosterChange) onRosterChange();
+        scheduleRetry();
       });
-    return true;
+  }
+
+  /*
+    경기 도중 끊겼을 때만 다시 붙는다.
+    처음부터 서버에 못 붙은 경우는 예전처럼 조용히 오프라인(봇)으로 간다.
+    (중간에 붙으면 혼자 놀던 좀비와 서버 좀비가 겹쳐 버린다)
+  */
+  function scheduleRetry() {
+    if (!want || !everOnline || retryTimer || retry >= 6) return;
+    retry++;
+    retryTimer = setTimeout(function () {
+      retryTimer = null;
+      if (want) tryJoin();
+    }, 1000 * retry);
+  }
+
+  /* 옛 소켓을 조용히 닫는다 (onclose 가 새 연결 상태를 건드리지 않게 손도 떼고) */
+  function closeSocket() {
+    if (!ws) return;
+    const old = ws;
+    ws = null;
+    old.onopen = old.onmessage = old.onerror = old.onclose = null;
+    try {
+      old.close();
+    } catch (e) {
+      /* 이미 닫힘 */
+    }
   }
 
   function openSocket(u) {
@@ -81,6 +124,22 @@ const NET = (function () {
 
     ws.onopen = function () {
       status = 'online';
+      everOnline = true;
+      retry = 0;
+      /*
+        탭을 다른 데로 넘기면 화면 갱신(requestAnimationFrame)이 멈춰
+        update() 가 안 불리고, 서버는 15초 뒤 '나간 사람' 으로 보고 끊어 버린다.
+        화면과 상관없이 도는 시계로 2초에 한 번 살아 있다고 알린다.
+      */
+      if (beat) clearInterval(beat);
+      beat = setInterval(function () {
+        if (!ws || ws.readyState !== 1) return;
+        try {
+          ws.send(JSON.stringify({ t: 'ping', at: Date.now() }));
+        } catch (e) {
+          /* 다음 번에 다시 */
+        }
+      }, 2000);
       if (onRosterChange) onRosterChange();
     };
 
@@ -101,6 +160,7 @@ const NET = (function () {
         (m.players || []).forEach(function (p) {
           if (p.id !== myId) remotes.set(p.id, p);
         });
+        if (handlers.welcome) handlers.welcome(m);
         if (onRosterChange) onRosterChange();
       } else if (m.t === 'start') {
         started = true;
@@ -123,6 +183,8 @@ const NET = (function () {
         zombieSnap = m.zs || [];
         zombieRemain = m.remain || 0;
         roomsLeft = m.rooms === undefined ? roomsLeft : m.rooms;
+      } else if (m.t === 'shot') {
+        if (handlers.shot) handlers.shot(m);
       } else if (m.t === 'zdie') {
         if (handlers.zdie) handlers.zdie(m);
       } else if (m.t === 'room') {
@@ -147,20 +209,22 @@ const NET = (function () {
 
     ws.onclose = function () {
       if (status !== 'failed') status = 'off';
+      if (beat) { clearInterval(beat); beat = null; }
+      ws = null;
+      myId = null;
       remotes.clear();
+      zombieSnap = [];
       if (onRosterChange) onRosterChange();
+      scheduleRetry();
     };
   }
 
   function disconnect() {
-    if (ws) {
-      try {
-        ws.close();
-      } catch (e) {
-        /* 이미 닫힘 */
-      }
-    }
-    ws = null;
+    want = false;
+    everOnline = false;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    if (beat) { clearInterval(beat); beat = null; }
+    closeSocket();
     myId = null;
     started = false;
     remotes.clear();
@@ -185,6 +249,20 @@ const NET = (function () {
     if (status !== 'online' || !ws || ws.readyState !== 1) return;
     try {
       ws.send(JSON.stringify({ t: 'hit', id: zid, d: Math.round(dmg), h: head ? 1 : 0 }));
+    } catch (e) {
+      /* 무시 */
+    }
+  }
+
+  /* 내가 쏜 총을 남들에게도 보여 준다 (a: 총구, b: 탄착) */
+  function sendShot(a, b) {
+    if (status !== 'online' || !ws || ws.readyState !== 1) return;
+    try {
+      ws.send(JSON.stringify({
+        t: 'shot',
+        a: [+a.x.toFixed(2), +a.y.toFixed(2), +a.z.toFixed(2)],
+        b: [+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)],
+      }));
     } catch (e) {
       /* 무시 */
     }
@@ -223,6 +301,7 @@ const NET = (function () {
     update,
     sendKills,
     sendHit,
+    sendShot,
     forceStart,
     on,
     list,
