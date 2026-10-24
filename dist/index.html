@@ -255,16 +255,27 @@
   #start::after{content:'';margin-bottom:auto;}
 
   /* 제작사 표기 (제목 위) */
+  /* 어두운 게임 화면 위에서 혼자 환하게 빛나는 간판처럼 */
   .brand{
     display:inline-flex;align-items:center;gap:10px;margin-bottom:20px;
     font-size:clamp(11px,1.6vw,14px);font-weight:800;letter-spacing:.38em;
-    color:#9aa094;text-decoration:none;text-transform:uppercase;
-    padding:7px 16px;border:1px solid rgba(255,255,255,.14);
-    background:rgba(10,12,14,.5);transition:color .2s,border-color .2s;
+    color:#fbf9f2;text-decoration:none;text-transform:uppercase;
+    padding:8px 18px;border:1px solid rgba(255,255,255,.42);
+    background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.05));
+    text-shadow:0 0 14px rgba(255,255,255,.6);
+    animation:brandGlow 3.4s ease-in-out infinite;
+    transition:color .2s,border-color .2s,background .2s;
   }
-  .brand b{color:var(--red);font-weight:900;}
-  .brand::after{content:'↗';font-size:.78em;letter-spacing:0;opacity:.55;}
-  .brand:hover{color:#f2efe4;border-color:rgba(196,40,31,.75);}
+  .brand b{color:#ff5a47;font-weight:900;text-shadow:0 0 16px rgba(255,90,70,.95);}
+  .brand::after{content:'↗';font-size:.78em;letter-spacing:0;opacity:.8;}
+  @keyframes brandGlow{
+    0%,100%{box-shadow:0 0 18px rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.3);}
+    50%{box-shadow:0 0 32px rgba(255,255,255,.3),inset 0 1px 0 rgba(255,255,255,.45);}
+  }
+  .brand:hover{
+    color:#fff;border-color:#fff;
+    background:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,.12));
+  }
   .brand:hover::after{opacity:1;}
 
   .screen h1{
