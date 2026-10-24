@@ -245,6 +245,28 @@
     text-align:center;padding:24px;
   }
   .screen.show{display:flex;}
+  /*
+    시작 화면은 내용이 길어 창이 낮으면 넘친다.
+    flex 가운데 정렬은 넘칠 때 위가 잘려 제작사 표기와 제목이 사라지므로,
+    위아래에 빈 플렉스 아이템을 두어 여유가 있을 때만 가운데로 모은다.
+  */
+  #start{justify-content:flex-start;overflow-y:auto;}
+  #start::before{content:'';margin-top:auto;}
+  #start::after{content:'';margin-bottom:auto;}
+
+  /* 제작사 표기 (제목 위) */
+  .brand{
+    display:inline-flex;align-items:center;gap:10px;margin-bottom:20px;
+    font-size:clamp(11px,1.6vw,14px);font-weight:800;letter-spacing:.38em;
+    color:#9aa094;text-decoration:none;text-transform:uppercase;
+    padding:7px 16px;border:1px solid rgba(255,255,255,.14);
+    background:rgba(10,12,14,.5);transition:color .2s,border-color .2s;
+  }
+  .brand b{color:var(--red);font-weight:900;}
+  .brand::after{content:'↗';font-size:.78em;letter-spacing:0;opacity:.55;}
+  .brand:hover{color:#f2efe4;border-color:rgba(196,40,31,.75);}
+  .brand:hover::after{opacity:1;}
+
   .screen h1{
     font-size:clamp(38px,8vw,84px);font-weight:900;letter-spacing:.02em;line-height:.95;
     text-shadow:0 0 40px rgba(196,40,31,.35);
@@ -548,6 +570,7 @@
     .screen .card{margin-top:14px;padding:14px 16px;}
     .screen .btn{margin-top:14px;padding:12px 36px;font-size:16px;}
     .tagline{font-size:10px;letter-spacing:.25em;}
+    .brand{margin-bottom:10px;padding:5px 11px;letter-spacing:.26em;}
     .hint{display:none;}
     .cut-bar{height:8vh;}
     .cut-sub{bottom:calc(8vh + 14px);font-size:13px;line-height:1.6;}
@@ -652,6 +675,7 @@
 
 <!-- ================= 시작 화면 ================= -->
 <div class="screen show" id="start">
+  <a class="brand" href="https://tribe3dgames.vercel.app" target="_blank" rel="noopener noreferrer">TRIBE&nbsp;<b>3D</b>&nbsp;GAMES</a>
   <h1>폐교 : <em>좀비 킬러</em></h1>
   <div class="tagline">Abandoned School — Survive the Night</div>
 
